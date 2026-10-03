@@ -1,0 +1,23 @@
+id: stk-ema-pullback-swing
+version: 1
+asset_class: stocks
+hypothesis: Liquid large caps above a rising 200-day EMA that pull back to the 20-day EMA and close back above it continue higher over days.
+universe: [SPY, QQQ, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
+timeframes: {signal: D1}
+features:
+  ema20:  {fn: talib.EMA, period: 20}
+  ema200: {fn: talib.EMA, period: 200}
+  touch:  {fn: pattern.zone_touch, ref: ema20, tolerance_atr: 0.4}
+entry:
+  long:  "close > ema200 and rising(ema200, 10) and touch and close > ema20 and close > open"
+exit:
+  stop_atr: 1.5
+  target_r: 2.5
+  max_bars: 15
+  breakeven_r: 1.0
+holding: {expected_hours: 168}
+filters: [no_earnings_3d]
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.0, 2.5], target_r: [1.5, 3.5]}
+provenance: {source: "trend pullback family", author: claude, created: 2026-10-03}
+status: proposed

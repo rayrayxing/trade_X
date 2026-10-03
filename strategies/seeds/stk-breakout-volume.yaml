@@ -1,0 +1,23 @@
+id: stk-breakout-volume
+version: 1
+asset_class: stocks
+hypothesis: A close above the 50-day high on at least 1.5x average volume marks institutional demand that carries for days. Volume is measured relative to the feed's own average, so the IEX slice works.
+universe: [$watchlist, NVDA, AMD, TSLA, META, AMZN]
+timeframes: {signal: D1}
+features:
+  hi50:   {fn: stat.highest, ref: high, period: 50}
+  relvol: {fn: stat.rel_volume, period: 20}
+  ema50:  {fn: talib.EMA, period: 50}
+entry:
+  long: "close > hi50 and relvol > 1.5 and close > ema50"
+exit:
+  stop_atr: 2.0
+  target_r: 3.0
+  max_bars: 20
+  trail_atr: 2.5
+holding: {expected_hours: 240}
+filters: [no_earnings_3d]
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.5, 3.0], features.relvol.period: [10, 30]}
+provenance: {source: "breakout family", author: claude, created: 2026-10-03}
+status: proposed

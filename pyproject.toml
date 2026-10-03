@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradex"
+version = "0.2.0"
+description = "Level 4 Trading: strategy registry, cost-aware backtester and selection engine"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "PyYAML>=6.0",
+  "TA-Lib>=0.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+tradex = "tradex.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tradex*"]
+
+[tool.setuptools.package-data]
+tradex = ["py.typed", "costs/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

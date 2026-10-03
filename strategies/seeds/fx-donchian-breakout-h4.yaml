@@ -1,0 +1,24 @@
+id: fx-donchian-breakout-h4
+version: 1
+asset_class: forex
+hypothesis: Breakouts of a 4-hour 55-bar range in the direction of the daily trend capture trend persistence in FX (turtle-style).
+universe: [EUR_USD, USD_JPY, GBP_USD, AUD_USD, GBP_JPY, EUR_JPY]
+timeframes: {signal: H4, filter: D1}
+features:
+  hi55:  {fn: stat.highest, ref: high, period: 55}
+  lo55:  {fn: stat.lowest, ref: low, period: 55}
+  ema_d: {fn: talib.EMA, period: 100, tf: D1}
+  adx:   {fn: talib.ADX, period: 14}
+entry:
+  long:  "close > hi55 and close > ema_d and adx > 20"
+  short: "close < lo55 and close < ema_d and adx > 20"
+exit:
+  stop_atr: 2.0
+  target_r: 3.0
+  max_bars: 60
+  trail_atr: 3.0
+holding: {expected_hours: 120, crosses_rollover: true}
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.5, 3.0], features.hi55.period: [20, 55], features.lo55.period: [20, 55]}
+provenance: {source: "trend following family (Donchian channel breakout)", author: claude, created: 2026-10-03}
+status: proposed

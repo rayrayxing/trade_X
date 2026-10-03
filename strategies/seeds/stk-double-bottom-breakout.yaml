@@ -1,0 +1,22 @@
+id: stk-double-bottom-breakout
+version: 1
+asset_class: stocks
+hypothesis: A confirmed double bottom whose neckline breaks with a bullish candle near the second low marks a reversal; the measured move is about the pattern height.
+universe: [$watchlist, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
+timeframes: {signal: D1}
+features:
+  dbl:    {fn: pattern.double_top_bottom, k_atr: 2.0, tolerance_atr: 0.6}
+  ema200: {fn: talib.EMA, period: 200}
+entry:
+  long:  "dbl > 0"
+  short: "dbl < 0 and close < ema200"
+exit:
+  stop_atr: 2.0
+  target_r: 2.0
+  max_bars: 25
+holding: {expected_hours: 336}
+filters: [no_earnings_3d]
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.5, 3.0], features.dbl.k_atr: [1.5, 3.0]}
+provenance: {source: "chart-pattern family (in-house zigzag detector)", author: claude, created: 2026-10-03}
+status: proposed

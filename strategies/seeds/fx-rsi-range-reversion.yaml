@@ -1,0 +1,26 @@
+id: fx-rsi-range-reversion
+version: 1
+asset_class: forex
+hypothesis: When hourly trend strength is low, RSI extremes near Bollinger bands revert toward the mean.
+universe: [EUR_USD, AUD_USD, EUR_JPY]
+timeframes: {signal: H1}
+features:
+  rsi:   {fn: talib.RSI, period: 14}
+  adx:   {fn: talib.ADX, period: 14}
+  bb_up: {fn: talib.BBANDS, period: 20, output: upperband}
+  bb_lo: {fn: talib.BBANDS, period: 20, output: lowerband}
+entry:
+  long:  "adx < 20 and rsi < 25 and close < bb_lo"
+  short: "adx < 20 and rsi > 75 and close > bb_up"
+exit:
+  stop_atr: 1.5
+  target_r: 1.5
+  max_bars: 12
+  long_when: "rsi > 55"
+  short_when: "rsi < 45"
+holding: {expected_hours: 6, crosses_rollover: false}
+filters: [no_high_impact_news_30m]
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.0, 2.0], features.rsi.period: [7, 21]}
+provenance: {source: "mean reversion family", author: claude, created: 2026-10-03}
+status: proposed

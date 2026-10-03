@@ -1,0 +1,24 @@
+id: fx-trend-pullback-engulfing
+version: 3
+asset_class: forex
+hypothesis: In a daily uptrend, a pullback to the hourly 20 EMA that prints an engulfing candle resumes the trend.
+universe: [EUR_USD, GBP_USD, USD_JPY]
+timeframes: {signal: H1, filter: D1}
+features:
+  ema_fast: {fn: talib.EMA, period: 20, tf: H1}
+  ema_slow: {fn: talib.EMA, period: 50, tf: D1}
+  engulf:   {fn: talib.CDLENGULFING, tf: H1}
+  pullback: {fn: pattern.zone_touch, ref: ema_fast, tolerance_atr: 0.3}
+entry:
+  long:  "close > ema_slow and pullback and engulf > 0"
+  short: "close < ema_slow and pullback and engulf < 0"
+exit:
+  stop_atr: 1.5
+  target_r: 2.0
+  max_bars: 48
+holding: {expected_hours: 18, crosses_rollover: true}
+filters: [no_high_impact_news_30m]
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.0, 2.5], target_r: [1.5, 3.0]}
+provenance: {source: "thread-1 design doc example", author: claude, created: 2026-10-03}
+status: proposed
