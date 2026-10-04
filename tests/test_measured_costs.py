@@ -5,7 +5,7 @@ from tradex.backtest.engine import EngineConfig, run_backtest
 from tradex.costs.measured import MeasuredFxCosts, MeasuredSpreads, MissingSpread, spreads_from_ba
 from tradex.costs.models import OandaFxCosts
 from tradex.positions.review import ReviewPolicy
-from tests.conftest import simple_spec
+from conftest import simple_spec
 
 
 def ba_candles(idx, mid=1.08, spread=0.00012):

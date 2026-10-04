@@ -3,7 +3,7 @@ import pytest
 
 from tradex import cli
 from tradex.backtest.holdout import HoldoutLocked, HoldoutPolicy, holdout_look, looks, research_view
-from tests.conftest import flat_bars
+from conftest import flat_bars
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_one_look_per_strategy_version(policy):
 
 def test_cli_loader_applies_the_holdout(tmp_path, monkeypatch):
     from tradex.data.providers import CsvProvider
-    from tests.conftest import simple_spec
+    from conftest import simple_spec
     start = HoldoutPolicy.from_config().start
     bars = flat_bars(30, start=(start - pd.Timedelta(days=20)).strftime("%Y-%m-%d"))
     CsvProvider(tmp_path).save("X", "D1", bars)
