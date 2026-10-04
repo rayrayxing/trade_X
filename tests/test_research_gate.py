@@ -85,3 +85,46 @@ def test_stock_plan_runs_on_cached_bars(tmp_path, monkeypatch):
     assert row["result"] in ("pass", "fail") and row["symbols"] == ["IWM", "QQQ", "SPY"]
     assert row["n_trials"] == 4 and row["bars_used"] == 2700
     assert row["failing_rung"] in gate.RUNGS + (None,)
+
+
+def test_screened_stock_plan_uses_point_in_time_universe(tmp_path, monkeypatch):
+    from tradex.backtest.engine import EngineConfig
+    from tradex.backtest.validation import WalkForwardConfig
+    from tradex.data.providers import CsvProvider
+    from tradex.research.trials import TrialLedger
+    prov = CsvProvider(tmp_path)
+    for i, s in enumerate(["NVDA", "AMD", "TSLA", "KO", "PEP"]):
+        b = synthetic_bars(700, seed=10 + i)
+        b["volume"] = 1e3 * 10 ** i
+        prov.save(s, "D1", b)
+    monkeypatch.setattr(gate, "SCREEN_N", {"stocks": 2, "etfs": 2, "all": 2})
+    monkeypatch.setattr(gate, "EARNINGS_CACHE", tmp_path / "earnings")
+    entries = {e.id: e for e in catalog.load()}
+    plan = next(p for p in gate.PLANS if p.catalog_id == "breakout-with-volume-seed")
+    row = gate.run_plan(plan, entries[plan.catalog_id], TrialLedger(tmp_path / "t.sqlite"),
+                        WalkForwardConfig(n_folds=2, grid_points=2), Thresholds(), EngineConfig(), cache=tmp_path)
+    assert row["result"] in ("pass", "fail")
+    assert row["symbols"] == ["KO", "PEP"]                       # the two most liquid, not the spec's names
+    assert all(v == ["PEP", "KO"] for v in row["universe_by_date"].values())
+    assert "top 2 of 5 stocks" in row["universe_rule"] and row["variant"].endswith("|earnings")
+    assert any("no_earnings_3d" in w for w in row["warnings"])  # no earnings cached for these names: said so
+
+
+def test_fx_plan_runs_on_cached_bid_ask_with_measured_spreads(tmp_path, monkeypatch):
+    from tradex.backtest.engine import EngineConfig
+    from tradex.backtest.validation import WalkForwardConfig
+    from tradex.research.trials import TrialLedger
+    monkeypatch.setattr(gate, "OANDA_CACHE", tmp_path)
+    for i, p in enumerate(["EUR_USD", "USD_JPY", "GBP_USD", "AUD_USD", "GBP_JPY", "EUR_JPY"]):
+        b = synthetic_bars(3000, tf="H4", seed=i, price=1.2)
+        half = 0.00005 if "JPY" not in p else 0.005
+        for k in ("open", "high", "low", "close"):
+            b[f"bid_{k}"], b[f"ask_{k}"] = b[k] - half, b[k] + half
+        b.to_csv(tmp_path / f"{p}_H4.csv", index_label="ts")
+    entries = {e.id: e for e in catalog.load()}
+    plan = next(p for p in gate.PLANS if p.catalog_id == "donchian-channel-breakout")
+    row = gate.run_plan(plan, entries[plan.catalog_id], TrialLedger(tmp_path / "t.sqlite"),
+                        WalkForwardConfig(n_folds=2, grid_points=2), Thresholds(), EngineConfig(), cache=tmp_path)
+    assert row["result"] in ("pass", "fail") and row["market"].startswith("FX") and len(row["symbols"]) == 6
+    costs, rates = gate.fx_costs_and_rates({"EUR_USD": gate._fx(["EUR_USD"], "H4")["EUR_USD"]})
+    assert costs.measured_spreads["EUR_USD"].median() == pytest.approx(1.0)
