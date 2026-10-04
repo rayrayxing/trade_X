@@ -91,6 +91,14 @@ Signals are recomputed at each close on a rolling window of at least three lookb
 the full history on every seed. In paper and live a missing mark or FX rate blocks the
 trade and writes a Health row; nothing is estimated.
 
+In paper and live, `tradex/runtime/schedule.py` fires one close event per timeframe at
+each bar boundary (finer timeframes first). Every close is claimed in the ledger's jobs
+table, so it runs at most once, across restarts and crashes. After a sleep, the missed
+closes of each timeframe collapse into one run of the latest close. The ensemble book can
+span venues (`MultiVenueBook`, forex at Oanda and stocks at moomoo). Its equity is the sum
+of the account equities converted to USD at live rates, and the risk gate also caps size
+at the free margin of the venue the trade goes to.
+
 ```bash
 python -m tradex replay --data data/cache/oanda --tf H4 --ledger runs/h4.sqlite --check-parity
 python -m tradex why 2026-03-02-0007 --ledger runs/h4.sqlite

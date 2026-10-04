@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     status      TEXT NOT NULL DEFAULT 'queued',
     result      TEXT
 );
+CREATE INDEX IF NOT EXISTS jobs_agent_payload ON jobs(agent, payload);
 """
 
 
@@ -151,6 +152,33 @@ class Ledger:
     def mark_command(self, cid: int, time: str, result: str) -> None:
         with self._lock, self.db:
             self.db.execute("UPDATE commands SET applied_at=?, result=? WHERE id=?", (time, result, cid))
+
+    def claim_job(self, agent: str, payload: dict[str, Any], time: str) -> int | None:
+        """Claim a job exactly once: insert it as running unless a job with the same agent and
+        payload already exists (in any status). Returns the new job ID, or None if taken.
+        BEGIN IMMEDIATE makes the check-and-insert atomic across processes."""
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                hit = self.db.execute("SELECT id FROM jobs WHERE agent=? AND payload=?", (agent, body)).fetchone()
+                jid = None
+                if hit is None:
+                    jid = int(self.db.execute("INSERT INTO jobs (time, agent, payload, status) VALUES (?,?,?,'running')",
+                                              (time, agent, body)).lastrowid)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+        return jid
+
+    def finish_job(self, job_id: int, status: str, result: str = "") -> None:
+        with self._lock, self.db:
+            self.db.execute("UPDATE jobs SET status=?, result=? WHERE id=?", (status, result, job_id))
+
+    def jobs(self, agent: str) -> list[dict[str, Any]]:
+        return [dict(r) | {"payload": json.loads(r["payload"])}
+                for r in self.db.execute("SELECT * FROM jobs WHERE agent=? ORDER BY id", (agent,))]
 
     # --- reading ---------------------------------------------------------------------
 
