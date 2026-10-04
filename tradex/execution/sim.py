@@ -62,6 +62,8 @@ MARGIN_RATES = {"forex": 0.05, "stocks": 1.0}
 
 
 class SimBroker:
+    simulated = True                         # the core feeds simulated brokers its bars; venues fill on their own
+
     def __init__(self, initial_cash: float = 10_000.0, costs: dict[str, CostModel] | None = None,
                  fx_rates: dict[str, pd.Series] | None = None, bar: pd.Timedelta = pd.Timedelta(hours=1),
                  limit_bars: int = 1, book: str = "ensemble", account_id: str = "sim",
