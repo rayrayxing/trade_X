@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.cmd == "opend-check":
-        from tradex.data.opend import run
+        from tradex.data.opend_check import run
         return run()
     if a.cmd == "setup":
         from tradex.setup_cmd import run_setup

@@ -1,0 +1,1743 @@
+{
+ "meta": {
+  "run_at": "2026-10-04 15:18 UTC",
+  "thresholds": {
+   "min_trades": 100,
+   "min_profit_factor": 1.2,
+   "min_dsr": 0.95,
+   "max_drawdown": -0.5,
+   "min_positive_folds": 0.5
+  },
+  "walk_forward": {
+   "n_folds": 5,
+   "initial_train_frac": 0.4,
+   "anchored": true,
+   "grid_points": 4,
+   "max_trials": 48,
+   "min_train_trades": 10,
+   "seed": 0
+  },
+  "engine": {
+   "initial_equity": 10000.0,
+   "risk_pct": 1.0,
+   "max_leverage": 1.0
+  },
+  "caveats": [
+   "US large caps are today's names, so cross-sectional and pairs results carry survivorship bias.",
+   "The stock seeds' universes were picked in 2026 and lean to that period's biggest winners (NVDA, AMD, TSLA, META, AMZN). Their trial count does not include that choice, so a pass that fails on other large caps (see robustness) is most likely hindsight selection, not an edge.",
+   "No historical earnings calendar: the seeds' no_earnings_3d filter was inactive.",
+   "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
+   "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
+   "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars.",
+   "DSR's N is every parameter set ever recorded for the strategy in the trial ledger."
+  ]
+ },
+ "rows": [
+  {
+   "catalog_id": "donchian-channel-breakout",
+   "catalog_name": "Donchian channel breakout",
+   "catalog_status": "Seed; screened: no FX edge since 2016",
+   "strategy_id": "fx-donchian-breakout-h4",
+   "spec": "strategies/seeds/fx-donchian-breakout-h4.yaml",
+   "timeframe": "H4",
+   "market": "FX (Oanda)",
+   "result": "needs data",
+   "why": "Oanda practice bid/ask history not downloaded (no oanda_token in the Keychain yet)"
+  },
+  {
+   "catalog_id": "ema-pullback-swing-seed",
+   "catalog_name": "EMA pullback swing (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "stk-ema-pullback-swing",
+   "spec": "strategies/seeds/stk-ema-pullback-swing.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "deflated_sharpe",
+   "failing": [
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "deflated Sharpe 0.45 (need 0.95)"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "META",
+    "MSFT",
+    "NVDA",
+    "QQQ",
+    "SPY",
+    "TSLA"
+   ],
+   "missing_symbols": [],
+   "bars_used": 42962,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 1075,
+   "profit_factor": 1.333,
+   "sharpe": 0.713,
+   "deflated_sharpe": 0.453,
+   "psr": 0.993,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.245,
+   "total_return": 1.462,
+   "win_rate": 0.506,
+   "costs_share_of_gross": 0.053,
+   "folds_profitable": "4/5",
+   "folds": [
+    {
+     "test": "2014-09-22..2017-02-15",
+     "params": {
+      "stop_atr": 2.5,
+      "target_r": 2.8333
+     },
+     "test_return": -0.011,
+     "trades": 226
+    },
+    {
+     "test": "2017-02-15..2019-07-15",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 3.5
+     },
+     "test_return": 0.28,
+     "trades": 204
+    },
+    {
+     "test": "2019-07-15..2021-12-06",
+     "params": {
+      "stop_atr": 2.5,
+      "target_r": 3.5
+     },
+     "test_return": 0.536,
+     "trades": 279
+    },
+    {
+     "test": "2021-12-06..2024-05-03",
+     "params": {
+      "stop_atr": 2.5,
+      "target_r": 3.5
+     },
+     "test_return": 0.133,
+     "trades": 153
+    },
+    {
+     "test": "2024-05-03..2026-10-02",
+     "params": {
+      "stop_atr": 2.5,
+      "target_r": 3.5
+     },
+     "test_return": 0.118,
+     "trades": 213
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 1075,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.3329659243557197,
+     "need": 1.2,
+     "ok": true
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.4530740418125705,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.24540837367217838,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.8,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [
+    "SPY: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "QQQ: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "NVDA: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMD: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AAPL: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "MSFT: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "META: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMZN: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "TSLA: no_earnings_3d: no earnings calendar supplied, filter inactive"
+   ],
+   "seconds": 16.3
+  },
+  {
+   "catalog_id": "macd-trend-with-candle-confirmation-seed",
+   "catalog_name": "MACD trend with candle confirmation (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "stk-macd-trend-candle",
+   "spec": "strategies/seeds/stk-macd-trend-candle.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "trades",
+   "failing": [
+    "trades",
+    "profit_factor",
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "only 93 out-of-sample trades (need 100)",
+    "profit factor 1.04 after costs (need 1.2)",
+    "deflated Sharpe 0.29 (need 0.95)"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "META",
+    "MSFT",
+    "NVDA",
+    "QQQ",
+    "SPY",
+    "TSLA"
+   ],
+   "missing_symbols": [],
+   "bars_used": 42962,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 93,
+   "profit_factor": 1.044,
+   "sharpe": 0.03,
+   "deflated_sharpe": 0.292,
+   "psr": 0.541,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.119,
+   "total_return": 0.005,
+   "win_rate": 0.452,
+   "costs_share_of_gross": 0.056,
+   "folds_profitable": "3/5",
+   "folds": [
+    {
+     "test": "2014-09-22..2017-02-15",
+     "params": {
+      "stop_atr": 1.6667,
+      "target_r": 2.0
+     },
+     "test_return": -0.091,
+     "trades": 21
+    },
+    {
+     "test": "2017-02-15..2019-07-15",
+     "params": {
+      "stop_atr": 1.6667,
+      "target_r": 2.0
+     },
+     "test_return": 0.035,
+     "trades": 14
+    },
+    {
+     "test": "2019-07-15..2021-12-06",
+     "params": {
+      "stop_atr": 1.6667,
+      "target_r": 2.5
+     },
+     "test_return": 0.114,
+     "trades": 20
+    },
+    {
+     "test": "2021-12-06..2024-05-03",
+     "params": {
+      "stop_atr": 1.6667,
+      "target_r": 2.5
+     },
+     "test_return": -0.067,
+     "trades": 17
+    },
+    {
+     "test": "2024-05-03..2026-10-02",
+     "params": {
+      "stop_atr": 1.3333,
+      "target_r": 1.5
+     },
+     "test_return": 0.029,
+     "trades": 21
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 93,
+     "need": 100,
+     "ok": false
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.043515640183679,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.2915351130417473,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.11905139109409746,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.6,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [
+    "SPY: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "QQQ: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "NVDA: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMD: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AAPL: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "MSFT: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "META: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMZN: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "TSLA: no_earnings_3d: no earnings calendar supplied, filter inactive"
+   ],
+   "seconds": 9.7
+  },
+  {
+   "catalog_id": "trend-pullback-with-engulfing-candle-seed",
+   "catalog_name": "Trend pullback with engulfing candle (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "fx-trend-pullback-engulfing",
+   "spec": "strategies/seeds/fx-trend-pullback-engulfing.yaml",
+   "timeframe": "H1",
+   "market": "FX (Oanda)",
+   "result": "needs data",
+   "why": "Oanda practice bid/ask history not downloaded (no oanda_token in the Keychain yet)"
+  },
+  {
+   "catalog_id": "rsi-2-pullback-in-uptrend-seed",
+   "catalog_name": "RSI(2) pullback in uptrend (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "stk-rsi2-meanrev",
+   "spec": "strategies/seeds/stk-rsi2-meanrev.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "profit factor 1.10 after costs (need 1.2)",
+    "deflated Sharpe 0.49 (need 0.95)"
+   ],
+   "symbols": [
+    "IWM",
+    "QQQ",
+    "SPY"
+   ],
+   "missing_symbols": [],
+   "bars_used": 15093,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 286,
+   "profit_factor": 1.1,
+   "sharpe": 0.142,
+   "deflated_sharpe": 0.494,
+   "psr": 0.688,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.169,
+   "total_return": 0.066,
+   "win_rate": 0.594,
+   "costs_share_of_gross": 0.085,
+   "folds_profitable": "3/5",
+   "folds": [
+    {
+     "test": "2014-09-22..2017-02-15",
+     "params": {
+      "stop_atr": 1.5,
+      "features.ema200.period": 100
+     },
+     "test_return": 0.076,
+     "trades": 51
+    },
+    {
+     "test": "2017-02-15..2019-07-15",
+     "params": {
+      "stop_atr": 1.5,
+      "features.ema200.period": 133
+     },
+     "test_return": -0.067,
+     "trades": 60
+    },
+    {
+     "test": "2019-07-15..2021-12-06",
+     "params": {
+      "stop_atr": 1.5,
+      "features.ema200.period": 100
+     },
+     "test_return": -0.034,
+     "trades": 60
+    },
+    {
+     "test": "2021-12-06..2024-05-03",
+     "params": {
+      "stop_atr": 2.8333,
+      "features.ema200.period": 133
+     },
+     "test_return": 0.009,
+     "trades": 38
+    },
+    {
+     "test": "2024-05-03..2026-10-02",
+     "params": {
+      "stop_atr": 2.8333,
+      "features.ema200.period": 133
+     },
+     "test_return": 0.09,
+     "trades": 77
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 286,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.0997480582353008,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.49352585043533737,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.16913600110219407,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.6,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [],
+   "seconds": 4.5
+  },
+  {
+   "catalog_id": "rsi-range-reversion-seed",
+   "catalog_name": "RSI range reversion (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "fx-rsi-range-reversion",
+   "spec": "strategies/seeds/fx-rsi-range-reversion.yaml",
+   "timeframe": "H1",
+   "market": "FX (Oanda)",
+   "result": "needs data",
+   "why": "Oanda practice bid/ask history not downloaded (no oanda_token in the Keychain yet)"
+  },
+  {
+   "catalog_id": "breakout-with-volume-seed",
+   "catalog_name": "Breakout with volume (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "stk-breakout-volume",
+   "spec": "strategies/seeds/stk-breakout-volume.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "robustness": {
+    "costs_x2": {
+     "oos_trades": 177,
+     "profit_factor": 1.858,
+     "sharpe": 0.782,
+     "deflated_sharpe": 0.985,
+     "max_drawdown": -0.085,
+     "folds_profitable": "4/5",
+     "gate": "pass",
+     "reasons": []
+    },
+    "other_large_caps": {
+     "oos_trades": 584,
+     "profit_factor": 1.0,
+     "sharpe": 0.019,
+     "deflated_sharpe": 0.211,
+     "max_drawdown": -0.223,
+     "folds_profitable": "3/5",
+     "gate": "fail",
+     "reasons": [
+      "profit factor 1.00 after costs (need 1.2)",
+      "deflated Sharpe 0.21 (need 0.95)"
+     ],
+     "symbols": [
+      "AAPL",
+      "BAC",
+      "COST",
+      "CSCO",
+      "CVX",
+      "GOOGL",
+      "GS",
+      "HD",
+      "INTC",
+      "JNJ",
+      "JPM",
+      "KO",
+      "LOW",
+      "MA",
+      "MRK",
+      "MS",
+      "MSFT",
+      "ORCL",
+      "PEP",
+      "PFE",
+      "UNH",
+      "V",
+      "WMT",
+      "XOM"
+     ]
+    }
+   },
+   "result": "pass",
+   "failing_rung": null,
+   "failing": [],
+   "reasons": [],
+   "symbols": [
+    "AMD",
+    "AMZN",
+    "META",
+    "NVDA",
+    "TSLA"
+   ],
+   "missing_symbols": [],
+   "bars_used": 22825,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 177,
+   "profit_factor": 1.907,
+   "sharpe": 0.829,
+   "deflated_sharpe": 0.99,
+   "psr": 0.998,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.082,
+   "total_return": 0.509,
+   "win_rate": 0.503,
+   "costs_share_of_gross": 0.045,
+   "folds_profitable": "4/5",
+   "folds": [
+    {
+     "test": "2014-09-24..2017-02-16",
+     "params": {
+      "stop_atr": 3.0,
+      "features.relvol.period": 30
+     },
+     "test_return": 0.156,
+     "trades": 40
+    },
+    {
+     "test": "2017-02-16..2019-07-16",
+     "params": {
+      "stop_atr": 3.0,
+      "features.relvol.period": 30
+     },
+     "test_return": -0.036,
+     "trades": 38
+    },
+    {
+     "test": "2019-07-16..2021-12-07",
+     "params": {
+      "stop_atr": 3.0,
+      "features.relvol.period": 30
+     },
+     "test_return": 0.228,
+     "trades": 49
+    },
+    {
+     "test": "2021-12-07..2024-05-06",
+     "params": {
+      "stop_atr": 3.0,
+      "features.relvol.period": 30
+     },
+     "test_return": 0.066,
+     "trades": 22
+    },
+    {
+     "test": "2024-05-06..2026-10-02",
+     "params": {
+      "stop_atr": 3.0,
+      "features.relvol.period": 30
+     },
+     "test_return": 0.035,
+     "trades": 28
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 177,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.9074940463840828,
+     "need": 1.2,
+     "ok": true
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.9901797853143098,
+     "need": 0.95,
+     "ok": true
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.082154749242203,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.8,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [
+    "NVDA: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMD: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "TSLA: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "META: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMZN: no_earnings_3d: no earnings calendar supplied, filter inactive"
+   ],
+   "seconds": 45.7
+  },
+  {
+   "catalog_id": "double-bottom-breakout-seed",
+   "catalog_name": "Double bottom breakout (seed)",
+   "catalog_status": "Seed",
+   "strategy_id": "stk-double-bottom-breakout",
+   "spec": "strategies/seeds/stk-double-bottom-breakout.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "deflated_sharpe",
+   "failing": [
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "deflated Sharpe 0.92 (need 0.95)"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "META",
+    "MSFT",
+    "NVDA",
+    "TSLA"
+   ],
+   "missing_symbols": [],
+   "bars_used": 32905,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 301,
+   "profit_factor": 1.467,
+   "sharpe": 0.677,
+   "deflated_sharpe": 0.925,
+   "psr": 0.991,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.163,
+   "total_return": 0.783,
+   "win_rate": 0.439,
+   "costs_share_of_gross": 0.032,
+   "folds_profitable": "3/5",
+   "folds": [
+    {
+     "test": "2014-09-24..2017-02-16",
+     "params": {
+      "stop_atr": 3.0,
+      "features.dbl.k_atr": 2.5
+     },
+     "test_return": 0.129,
+     "trades": 20
+    },
+    {
+     "test": "2017-02-16..2019-07-16",
+     "params": {
+      "stop_atr": 2.5,
+      "features.dbl.k_atr": 2.5
+     },
+     "test_return": -0.043,
+     "trades": 26
+    },
+    {
+     "test": "2019-07-16..2021-12-07",
+     "params": {
+      "stop_atr": 1.5,
+      "features.dbl.k_atr": 1.5
+     },
+     "test_return": 0.467,
+     "trades": 71
+    },
+    {
+     "test": "2021-12-07..2024-05-06",
+     "params": {
+      "stop_atr": 1.5,
+      "features.dbl.k_atr": 1.5
+     },
+     "test_return": 0.208,
+     "trades": 89
+    },
+    {
+     "test": "2024-05-06..2026-10-02",
+     "params": {
+      "stop_atr": 1.5,
+      "features.dbl.k_atr": 1.5
+     },
+     "test_return": -0.069,
+     "trades": 95
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 301,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.4671715750799315,
+     "need": 1.2,
+     "ok": true
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.9246250861430452,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.1627026381723744,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.6,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [
+    "NVDA: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMD: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AAPL: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "MSFT: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "META: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "AMZN: no_earnings_3d: no earnings calendar supplied, filter inactive",
+    "TSLA: no_earnings_3d: no earnings calendar supplied, filter inactive"
+   ],
+   "seconds": 8.7
+  },
+  {
+   "catalog_id": "52-week-high-momentum",
+   "catalog_name": "52-week-high momentum",
+   "catalog_status": "Build",
+   "strategy_id": "stk-52w-high-momentum",
+   "spec": "research/specs/stk-52w-high-momentum.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "profit factor 1.14 after costs (need 1.2)",
+    "deflated Sharpe 0.83 (need 0.95)"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "BAC",
+    "COST",
+    "CSCO",
+    "CVX",
+    "GOOGL",
+    "GS",
+    "HD",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "LOW",
+    "MA",
+    "META",
+    "MRK",
+    "MS",
+    "MSFT",
+    "NVDA",
+    "ORCL",
+    "PEP",
+    "PFE",
+    "TSLA",
+    "UNH",
+    "V",
+    "WMT",
+    "XOM"
+   ],
+   "missing_symbols": [],
+   "bars_used": 142623,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 2044,
+   "profit_factor": 1.141,
+   "sharpe": 0.414,
+   "deflated_sharpe": 0.834,
+   "psr": 0.923,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.264,
+   "total_return": 0.718,
+   "win_rate": 0.471,
+   "costs_share_of_gross": 0.068,
+   "folds_profitable": "4/5",
+   "folds": [
+    {
+     "test": "2014-09-24..2017-02-16",
+     "params": {
+      "stop_atr": 4.0,
+      "target_r": 2.6667
+     },
+     "test_return": 0.087,
+     "trades": 421
+    },
+    {
+     "test": "2017-02-16..2019-07-16",
+     "params": {
+      "stop_atr": 4.0,
+      "target_r": 2.6667
+     },
+     "test_return": 0.079,
+     "trades": 451
+    },
+    {
+     "test": "2019-07-16..2021-12-07",
+     "params": {
+      "stop_atr": 3.3333,
+      "target_r": 2.0
+     },
+     "test_return": 0.284,
+     "trades": 448
+    },
+    {
+     "test": "2021-12-07..2024-05-06",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 2.0
+     },
+     "test_return": -0.09,
+     "trades": 321
+    },
+    {
+     "test": "2024-05-06..2026-10-02",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 2.0
+     },
+     "test_return": 0.254,
+     "trades": 403
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 2044,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.1413006963008205,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.8342303145268454,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.26423518636279475,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.8,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [],
+   "seconds": 47.0
+  },
+  {
+   "catalog_id": "relative-strength-vs-sector",
+   "catalog_name": "Relative strength vs sector",
+   "catalog_status": "Build",
+   "strategy_id": "stk-sector-relative-strength",
+   "spec": "research/specs/stk-sector-relative-strength.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "deflated_sharpe",
+   "failing": [
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "deflated Sharpe 0.93 (need 0.95)"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "BAC",
+    "COST",
+    "CSCO",
+    "CVX",
+    "GOOGL",
+    "GS",
+    "HD",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "LOW",
+    "MA",
+    "META",
+    "MRK",
+    "MS",
+    "MSFT",
+    "NVDA",
+    "ORCL",
+    "PEP",
+    "PFE",
+    "TSLA",
+    "UNH",
+    "V",
+    "WMT",
+    "XOM"
+   ],
+   "missing_symbols": [],
+   "bars_used": 142623,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 2635,
+   "profit_factor": 1.241,
+   "sharpe": 0.671,
+   "deflated_sharpe": 0.93,
+   "psr": 0.989,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.331,
+   "total_return": 2.128,
+   "win_rate": 0.452,
+   "costs_share_of_gross": 0.066,
+   "folds_profitable": "5/5",
+   "folds": [
+    {
+     "test": "2014-09-24..2017-02-16",
+     "params": {
+      "stop_atr": 2.8333,
+      "target_r": 2.1667
+     },
+     "test_return": 0.219,
+     "trades": 513
+    },
+    {
+     "test": "2017-02-16..2019-07-16",
+     "params": {
+      "stop_atr": 2.8333,
+      "target_r": 1.5
+     },
+     "test_return": 0.358,
+     "trades": 524
+    },
+    {
+     "test": "2019-07-16..2021-12-07",
+     "params": {
+      "stop_atr": 2.8333,
+      "target_r": 1.5
+     },
+     "test_return": 0.415,
+     "trades": 554
+    },
+    {
+     "test": "2021-12-07..2024-05-06",
+     "params": {
+      "stop_atr": 3.5,
+      "target_r": 2.1667
+     },
+     "test_return": 0.035,
+     "trades": 503
+    },
+    {
+     "test": "2024-05-06..2026-10-02",
+     "params": {
+      "stop_atr": 3.5,
+      "target_r": 2.1667
+     },
+     "test_return": 0.29,
+     "trades": 541
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 2635,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.2407681103822834,
+     "need": 1.2,
+     "ok": true
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.9298816463896957,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.33075819182799593,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 1.0,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [],
+   "seconds": 49.9
+  },
+  {
+   "catalog_id": "pairs-trading-distance-and-cointegration",
+   "catalog_name": "Pairs trading (distance and cointegration)",
+   "catalog_status": "Build",
+   "strategy_id": "stk-pairs-zscore",
+   "spec": "research/specs/stk-pairs-zscore.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe",
+    "max_drawdown",
+    "folds_profitable"
+   ],
+   "reasons": [
+    "profit factor 0.86 after costs (need 1.2)",
+    "deflated Sharpe 0.00 (need 0.95)",
+    "max drawdown -52% (limit -50%)",
+    "only 20% of test folds profitable"
+   ],
+   "symbols": [
+    "BAC",
+    "COST",
+    "CSCO",
+    "CVX",
+    "GOOGL",
+    "GS",
+    "HD",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "LOW",
+    "MA",
+    "MRK",
+    "MS",
+    "ORCL",
+    "PEP",
+    "PFE",
+    "UNH",
+    "V",
+    "WMT",
+    "XOM"
+   ],
+   "missing_symbols": [],
+   "bars_used": 109718,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 1772,
+   "profit_factor": 0.861,
+   "sharpe": -0.823,
+   "deflated_sharpe": 0.0,
+   "psr": 0.003,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.516,
+   "total_return": -0.449,
+   "win_rate": 0.422,
+   "costs_share_of_gross": 0.078,
+   "folds_profitable": "1/5",
+   "folds": [
+    {
+     "test": "2014-09-24..2017-02-16",
+     "params": {
+      "stop_atr": 3.3333,
+      "max_bars": 17
+     },
+     "test_return": -0.036,
+     "trades": 364
+    },
+    {
+     "test": "2017-02-16..2019-07-16",
+     "params": {
+      "stop_atr": 3.3333,
+      "max_bars": 17
+     },
+     "test_return": -0.096,
+     "trades": 313
+    },
+    {
+     "test": "2019-07-16..2021-12-07",
+     "params": {
+      "stop_atr": 4.0,
+      "max_bars": 13
+     },
+     "test_return": -0.277,
+     "trades": 416
+    },
+    {
+     "test": "2021-12-07..2024-05-06",
+     "params": {
+      "stop_atr": 2.6667,
+      "max_bars": 20
+     },
+     "test_return": -0.163,
+     "trades": 347
+    },
+    {
+     "test": "2024-05-06..2026-10-02",
+     "params": {
+      "stop_atr": 2.6667,
+      "max_bars": 20
+     },
+     "test_return": 0.046,
+     "trades": 332
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 1772,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 0.861270098502708,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 1.3964929213017285e-10,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.5164520769828324,
+     "need": -0.5,
+     "ok": false
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.2,
+     "need": 0.5,
+     "ok": false
+    }
+   ],
+   "warnings": [],
+   "seconds": 40.4
+  },
+  {
+   "catalog_id": "gap-and-go-after-news-gap",
+   "catalog_name": "Gap-and-go after news gap",
+   "catalog_status": "Build",
+   "strategy_id": "stk-gap-and-go-h1",
+   "spec": "research/specs/stk-gap-and-go-h1.yaml",
+   "timeframe": "H1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe",
+    "folds_profitable"
+   ],
+   "reasons": [
+    "profit factor 0.98 after costs (need 1.2)",
+    "deflated Sharpe 0.18 (need 0.95)",
+    "only 40% of test folds profitable"
+   ],
+   "symbols": [
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "META",
+    "MSFT",
+    "NVDA",
+    "TSLA"
+   ],
+   "missing_symbols": [],
+   "bars_used": 98273,
+   "data_from": "2018-09-28",
+   "data_to": "2026-10-02",
+   "oos_trades": 531,
+   "profit_factor": 0.98,
+   "sharpe": -0.063,
+   "deflated_sharpe": 0.177,
+   "psr": 0.445,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.245,
+   "total_return": -0.052,
+   "win_rate": 0.473,
+   "costs_share_of_gross": 0.088,
+   "folds_profitable": "2/5",
+   "folds": [
+    {
+     "test": "2021-12-09..2022-11-23",
+     "params": {
+      "stop_atr": 1.0,
+      "target_r": 1.6667
+     },
+     "test_return": -0.007,
+     "trades": 138
+    },
+    {
+     "test": "2022-11-23..2023-11-09",
+     "params": {
+      "stop_atr": 1.0,
+      "target_r": 1.6667
+     },
+     "test_return": 0.108,
+     "trades": 93
+    },
+    {
+     "test": "2023-11-09..2024-10-28",
+     "params": {
+      "stop_atr": 1.0,
+      "target_r": 1.6667
+     },
+     "test_return": 0.061,
+     "trades": 79
+    },
+    {
+     "test": "2024-10-28..2025-10-16",
+     "params": {
+      "stop_atr": 1.0,
+      "target_r": 1.6667
+     },
+     "test_return": -0.056,
+     "trades": 106
+    },
+    {
+     "test": "2025-10-16..2026-10-02",
+     "params": {
+      "stop_atr": 1.0,
+      "target_r": 2.3333
+     },
+     "test_return": -0.14,
+     "trades": 115
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 531,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 0.9800818432189186,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.17743393838290933,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.24476139588826595,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.4,
+     "need": 0.5,
+     "ok": false
+    }
+   ],
+   "warnings": [],
+   "seconds": 18.1
+  },
+  {
+   "catalog_id": "overnight-vs-intraday-return-split",
+   "catalog_name": "Overnight vs intraday return split",
+   "catalog_status": "Build",
+   "strategy_id": "etf-overnight-hold",
+   "spec": "research/specs/etf-overnight-hold.yaml",
+   "timeframe": "H1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe",
+    "max_drawdown",
+    "folds_profitable"
+   ],
+   "reasons": [
+    "profit factor 0.62 after costs (need 1.2)",
+    "deflated Sharpe 0.00 (need 0.95)",
+    "max drawdown -79% (limit -50%)",
+    "only 0% of test folds profitable"
+   ],
+   "symbols": [
+    "DIA",
+    "IWM",
+    "QQQ",
+    "SPY",
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY"
+   ],
+   "missing_symbols": [],
+   "bars_used": 182507,
+   "data_from": "2018-09-28",
+   "data_to": "2026-10-02",
+   "oos_trades": 3670,
+   "profit_factor": 0.618,
+   "sharpe": -2.444,
+   "deflated_sharpe": 0.0,
+   "psr": 0.0,
+   "n_trials": 4,
+   "n_trials_this_run": 4,
+   "max_drawdown": -0.789,
+   "total_return": -0.786,
+   "win_rate": 0.249,
+   "costs_share_of_gross": 0.255,
+   "folds_profitable": "0/5",
+   "folds": [
+    {
+     "test": "2021-12-09..2022-11-23",
+     "params": {
+      "stop_atr": 2.0
+     },
+     "test_return": -0.453,
+     "trades": 805
+    },
+    {
+     "test": "2022-11-23..2023-11-09",
+     "params": {
+      "stop_atr": 2.0
+     },
+     "test_return": -0.32,
+     "trades": 645
+    },
+    {
+     "test": "2023-11-09..2024-10-28",
+     "params": {
+      "stop_atr": 2.6667
+     },
+     "test_return": -0.09,
+     "trades": 706
+    },
+    {
+     "test": "2024-10-28..2025-10-16",
+     "params": {
+      "stop_atr": 2.6667
+     },
+     "test_return": -0.24,
+     "trades": 786
+    },
+    {
+     "test": "2025-10-16..2026-10-02",
+     "params": {
+      "stop_atr": 2.6667
+     },
+     "test_return": -0.168,
+     "trades": 728
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 3670,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 0.6178300447014586,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 2.0239365738916604e-13,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.7894424630708072,
+     "need": -0.5,
+     "ok": false
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.0,
+     "need": 0.5,
+     "ok": false
+    }
+   ],
+   "warnings": [],
+   "seconds": 11.2
+  },
+  {
+   "catalog_id": "joint-time-series-and-cross-sectional-strategy",
+   "catalog_name": "Joint time-series and cross-sectional strategy",
+   "catalog_status": "Build",
+   "strategy_id": "etf-ts-xs-momentum",
+   "spec": "research/specs/etf-ts-xs-momentum.yaml",
+   "timeframe": "D1",
+   "market": "US stocks/ETFs (moomoo)",
+   "result": "fail",
+   "failing_rung": "profit_factor",
+   "failing": [
+    "profit_factor",
+    "deflated_sharpe"
+   ],
+   "reasons": [
+    "profit factor 1.04 after costs (need 1.2)",
+    "deflated Sharpe 0.54 (need 0.95)"
+   ],
+   "symbols": [
+    "DIA",
+    "GLD",
+    "IWM",
+    "QQQ",
+    "SPY",
+    "TLT",
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY"
+   ],
+   "missing_symbols": [],
+   "bars_used": 68866,
+   "data_from": "2006-09-20",
+   "data_to": "2026-10-02",
+   "oos_trades": 1457,
+   "profit_factor": 1.037,
+   "sharpe": 0.133,
+   "deflated_sharpe": 0.543,
+   "psr": 0.677,
+   "n_trials": 16,
+   "n_trials_this_run": 16,
+   "max_drawdown": -0.389,
+   "total_return": 0.111,
+   "win_rate": 0.444,
+   "costs_share_of_gross": 0.066,
+   "folds_profitable": "3/5",
+   "folds": [
+    {
+     "test": "2014-09-22..2017-02-15",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 2.6667
+     },
+     "test_return": 0.051,
+     "trades": 283
+    },
+    {
+     "test": "2017-02-15..2019-07-15",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 2.6667
+     },
+     "test_return": -0.013,
+     "trades": 290
+    },
+    {
+     "test": "2019-07-15..2021-12-06",
+     "params": {
+      "stop_atr": 2.0,
+      "target_r": 2.6667
+     },
+     "test_return": 0.012,
+     "trades": 303
+    },
+    {
+     "test": "2021-12-06..2024-05-03",
+     "params": {
+      "stop_atr": 3.3333,
+      "target_r": 2.0
+     },
+     "test_return": -0.141,
+     "trades": 292
+    },
+    {
+     "test": "2024-05-03..2026-10-02",
+     "params": {
+      "stop_atr": 3.3333,
+      "target_r": 2.0
+     },
+     "test_return": 0.234,
+     "trades": 289
+    }
+   ],
+   "checks": [
+    {
+     "rung": "trades",
+     "value": 1457,
+     "need": 100,
+     "ok": true
+    },
+    {
+     "rung": "profit_factor",
+     "value": 1.0369298185128688,
+     "need": 1.2,
+     "ok": false
+    },
+    {
+     "rung": "deflated_sharpe",
+     "value": 0.5434910596942788,
+     "need": 0.95,
+     "ok": false
+    },
+    {
+     "rung": "max_drawdown",
+     "value": -0.38865495144896856,
+     "need": -0.5,
+     "ok": true
+    },
+    {
+     "rung": "folds_profitable",
+     "value": 0.6,
+     "need": 0.5,
+     "ok": true
+    }
+   ],
+   "warnings": [],
+   "seconds": 23.8
+  },
+  {
+   "catalog_id": "deep-momentum-network-lstm-trained-on-sharpe",
+   "catalog_name": "Deep momentum network (LSTM trained on Sharpe)",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs a trained LSTM model; no model training in phase 1"
+  },
+  {
+   "catalog_id": "momentum-transformer-with-changepoints",
+   "catalog_name": "Momentum Transformer with changepoints",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs a trained transformer model"
+  },
+  {
+   "catalog_id": "slow-momentum-with-fast-reversion-changepoint-detection",
+   "catalog_name": "Slow momentum with fast reversion (changepoint detection)",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs the Gaussian-process changepoint model"
+  },
+  {
+   "catalog_id": "dynamic-momentum-learning-adaptive-lookback",
+   "catalog_name": "Dynamic momentum learning (adaptive lookback)",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs the adaptive-lookback learner"
+  },
+  {
+   "catalog_id": "learning-to-rank-cross-sectional-momentum",
+   "catalog_name": "Learning-to-rank cross-sectional momentum",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs a trained ranking model and a point-in-time universe"
+  },
+  {
+   "catalog_id": "deep-learning-statistical-arbitrage-residual-portfolios",
+   "catalog_name": "Deep learning statistical arbitrage (residual portfolios)",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "needs a trained model and factor returns"
+  },
+  {
+   "catalog_id": "deep-chart-pattern-recognition-head-and-shoulders-triangles",
+   "catalog_name": "Deep chart-pattern recognition (head and shoulders, triangles)",
+   "catalog_status": "Build: fills catalog gaps",
+   "result": "not built",
+   "why": "needs a trained pattern model"
+  },
+  {
+   "catalog_id": "large-tick-trend-filter-trade-trend-only-where-tick-size-is-large",
+   "catalog_name": "Large-tick trend filter (trade trend only where tick size is large)",
+   "catalog_status": "Build: filter for all trend strategies",
+   "result": "not a standalone signal",
+   "why": "a filter for trend strategies"
+  },
+  {
+   "catalog_id": "uncertainty-gated-stock-ranker-skip-when-model-unsure",
+   "catalog_name": "Uncertainty-gated stock ranker (skip when model unsure)",
+   "catalog_status": "Build: gate for every ranker",
+   "result": "not a standalone signal",
+   "why": "a gate on a ranker that does not exist yet"
+  },
+  {
+   "catalog_id": "hidden-markov-regime-allocation",
+   "catalog_name": "Hidden Markov regime allocation",
+   "catalog_status": "Build: regime input for ensemble",
+   "result": "not a standalone signal",
+   "why": "regime input for the ensemble"
+  },
+  {
+   "catalog_id": "realised-covariance-regime-detection",
+   "catalog_name": "Realised-covariance regime detection",
+   "catalog_status": "Build",
+   "result": "not a standalone signal",
+   "why": "regime detector, an input to allocation"
+  },
+  {
+   "catalog_id": "regime-switching-volatility-forecast-for-sizing",
+   "catalog_name": "Regime-switching volatility forecast for sizing",
+   "catalog_status": "Build: sizing input",
+   "result": "not a standalone signal",
+   "why": "sizing input"
+  },
+  {
+   "catalog_id": "long-calls-or-puts-on-high-conviction-plans",
+   "catalog_name": "Long calls or puts on high-conviction plans",
+   "catalog_status": "Build: execution style, not a signal",
+   "result": "not a standalone signal",
+   "why": "execution style; needs live option chains"
+  },
+  {
+   "catalog_id": "intraday-momentum-first-half-hour-predicts-last",
+   "catalog_name": "Intraday momentum (first half-hour predicts last)",
+   "catalog_status": "Build",
+   "result": "not built",
+   "why": "trades the last half hour; the engine fills exits at the next open, so it cannot exit at the 16:00 close yet"
+  },
+  {
+   "catalog_id": "earnings-day-jump-continuation",
+   "catalog_name": "Earnings-day jump continuation",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "historical earnings dates"
+  },
+  {
+   "catalog_id": "pre-earnings-run-up-and-iv-crush-options",
+   "catalog_name": "Pre-earnings run-up and IV crush (options)",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "historical earnings dates and option implied volatility"
+  },
+  {
+   "catalog_id": "pre-fomc-announcement-drift",
+   "catalog_name": "Pre-FOMC announcement drift",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "historical FOMC dates (data/calendar covers 2026-2027 only)"
+  },
+  {
+   "catalog_id": "llm-news-sentiment-long-short",
+   "catalog_name": "LLM news sentiment long-short",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "news headline history"
+  },
+  {
+   "catalog_id": "chatgpt-headline-scoring",
+   "catalog_name": "ChatGPT headline scoring",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "news headline history"
+  },
+  {
+   "catalog_id": "short-high-borrow-fee-high-short-interest-names",
+   "catalog_name": "Short high borrow-fee, high short-interest names",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "borrow-fee and short-interest history (not downloaded in phase 1)"
+  },
+  {
+   "catalog_id": "short-seller-flow-signal",
+   "catalog_name": "Short-seller flow signal",
+   "catalog_status": "Build",
+   "result": "needs data",
+   "why": "short-volume history (not downloaded in phase 1)"
+  }
+ ]
+}

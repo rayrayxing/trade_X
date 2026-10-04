@@ -1,0 +1,194 @@
+{
+ "FX TSMOM 12m vol-scaled": {
+  "full": {
+   "ann_ret": 0.6,
+   "ann_vol": 6.3,
+   "sharpe": 0.1,
+   "t": 0.5,
+   "maxdd": -23.8
+  },
+  "2016+": {
+   "ann_ret": -1.9,
+   "ann_vol": 6.1,
+   "sharpe": -0.31,
+   "t": -1.0,
+   "maxdd": -23.4
+  }
+ },
+ "FX TSMOM 3m vol-scaled": {
+  "full": {
+   "ann_ret": 0.0,
+   "ann_vol": 6.3,
+   "sharpe": 0.0,
+   "t": 0.0,
+   "maxdd": -41.0
+  },
+  "2016+": {
+   "ann_ret": -4.0,
+   "ann_vol": 6.3,
+   "sharpe": -0.64,
+   "t": -2.1,
+   "maxdd": -36.5
+  }
+ },
+ "FX MA 50/200 trend": {
+  "full": {
+   "ann_ret": 0.5,
+   "ann_vol": 6.3,
+   "sharpe": 0.08,
+   "t": 0.4,
+   "maxdd": -27.4
+  },
+  "2016+": {
+   "ann_ret": -2.0,
+   "ann_vol": 6.2,
+   "sharpe": -0.32,
+   "t": -1.1,
+   "maxdd": -27.4
+  }
+ },
+ "FX Donchian 55/20 breakout": {
+  "full": {
+   "ann_ret": 0.2,
+   "ann_vol": 5.1,
+   "sharpe": 0.05,
+   "t": 0.2,
+   "maxdd": -23.5
+  },
+  "2016+": {
+   "ann_ret": -1.9,
+   "ann_vol": 5.0,
+   "sharpe": -0.38,
+   "t": -1.2,
+   "maxdd": -20.3
+  }
+ },
+ "FX 5-day reversal": {
+  "full": {
+   "ann_ret": -1.9,
+   "ann_vol": 5.9,
+   "sharpe": -0.32,
+   "t": -1.7,
+   "maxdd": -45.1
+  },
+  "2016+": {
+   "ann_ret": -1.5,
+   "ann_vol": 6.0,
+   "sharpe": -0.26,
+   "t": -0.8,
+   "maxdd": -26.5
+  }
+ },
+ "FX cross-sectional momentum 3m": {
+  "full": {
+   "ann_ret": 0.3,
+   "ann_vol": 1.7,
+   "sharpe": 0.17,
+   "t": 0.9,
+   "maxdd": -7.1
+  },
+  "2016+": {
+   "ann_ret": -0.3,
+   "ann_vol": 1.4,
+   "sharpe": -0.23,
+   "t": -0.7,
+   "maxdd": -6.6
+  }
+ },
+ "S&P buy and hold (monthly)": {
+  "full": {
+   "ann_ret": 9.6,
+   "ann_vol": 12.2,
+   "sharpe": 0.79,
+   "t": 4.7,
+   "maxdd": -50.8
+  },
+  "2016+": {
+   "ann_ret": 13.1,
+   "ann_vol": 12.1,
+   "sharpe": 1.08,
+   "t": 3.5,
+   "maxdd": -20.3
+  }
+ },
+ "S&P 10-month SMA timing": {
+  "full": {
+   "ann_ret": 8.4,
+   "ann_vol": 8.9,
+   "sharpe": 0.94,
+   "t": 5.6,
+   "maxdd": -19.1
+  },
+  "2016+": {
+   "ann_ret": 9.7,
+   "ann_vol": 10.4,
+   "sharpe": 0.93,
+   "t": 3.1,
+   "maxdd": -19.1
+  }
+ },
+ "S&P 12m TSMOM long/flat": {
+  "full": {
+   "ann_ret": 8.9,
+   "ann_vol": 9.4,
+   "sharpe": 0.95,
+   "t": 5.7,
+   "maxdd": -19.1
+  },
+  "2016+": {
+   "ann_ret": 9.0,
+   "ann_vol": 11.0,
+   "sharpe": 0.81,
+   "t": 2.7,
+   "maxdd": -19.1
+  }
+ },
+ "S&P vol-managed (target/VIX, cap 2x)": {
+  "full": {
+   "ann_ret": 9.0,
+   "ann_vol": 11.3,
+   "sharpe": 0.8,
+   "t": 4.8,
+   "maxdd": -38.9
+  },
+  "2016+": {
+   "ann_ret": 11.7,
+   "ann_vol": 12.6,
+   "sharpe": 0.93,
+   "t": 3.0,
+   "maxdd": -24.2
+  }
+ },
+ "S&P buy after VIX > 30 (hold 3m)": {
+  "full": {
+   "ann_ret": 3.0,
+   "ann_vol": 5.6,
+   "sharpe": 0.54,
+   "t": 3.3,
+   "maxdd": -21.9
+  },
+  "2016+": {
+   "ann_ret": 3.3,
+   "ann_vol": 3.8,
+   "sharpe": 0.87,
+   "t": 2.8,
+   "maxdd": -0.8
+  }
+ },
+ "S&P only when VIX < 20": {
+  "full": {
+   "ann_ret": 5.3,
+   "ann_vol": 7.9,
+   "sharpe": 0.67,
+   "t": 4.0,
+   "maxdd": -27.8
+  },
+  "2016+": {
+   "ann_ret": 6.6,
+   "ann_vol": 9.7,
+   "sharpe": 0.68,
+   "t": 2.2,
+   "maxdd": -19.1
+  }
+ }
+}

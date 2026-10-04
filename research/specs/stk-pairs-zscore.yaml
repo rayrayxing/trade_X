@@ -1,0 +1,23 @@
+id: stk-pairs-zscore
+version: 1
+asset_class: stocks
+family: mean_reversion
+hypothesis: Same-industry pairs whose log-price spread (trailing OLS hedge ratio) stretches two standard deviations revert (Gatev, Goetzmann and Rouwenhorst 2006). Each leg is traded by the engine as its own position, long the cheap leg and short the rich one.
+universe: [KO, PEP, XOM, CVX, V, MA, JPM, BAC, GS, MS, HD, LOW, MRK, PFE, WMT, COST, INTC, CSCO, GOOGL, ORCL, UNH, JNJ]
+timeframes: {signal: D1}
+features:
+  pz: {fn: data.column, name: pair_z}
+entry:
+  long: "pz < -2"
+  short: "pz > 2"
+exit:
+  stop_atr: 3.0
+  target_r: 3.0
+  max_bars: 20
+  long_when: "pz > 0"
+  short_when: "pz < 0"
+holding: {expected_hours: 480}
+sizing: {model: kelly_fraction, cap_risk_pct: 1}
+search_space: {stop_atr: [2.0, 4.0], max_bars: [10, 20]}
+provenance: {source: "catalog: pairs trading (distance and cointegration)", author: claude, created: 2026-10-04}
+status: proposed

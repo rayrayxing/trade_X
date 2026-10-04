@@ -1,0 +1,20 @@
+id: etf-overnight-hold
+version: 1
+asset_class: stocks
+family: seasonality
+hypothesis: US equity returns accrue mostly overnight (Cooper, Cliff and Gulen 2008; Lou, Polk and Skouras 2019). Buy index and sector ETFs at 15:30 New York and sell at the next open.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB]
+timeframes: {signal: H1}
+features:
+  lf: {fn: data.column, name: last_full}
+entry:
+  long: "lf > 0"
+exit:
+  stop_atr: 3.0
+  target_r: 5.0
+  max_bars: 1
+holding: {expected_hours: 18}
+sizing: {model: kelly_fraction, cap_risk_pct: 1}
+search_space: {stop_atr: [2.0, 4.0]}
+provenance: {source: "catalog: overnight vs intraday return split", author: claude, created: 2026-10-04}
+status: proposed

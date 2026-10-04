@@ -86,3 +86,19 @@ def test_policy_rates_step_function():
     r = PolicyRates()
     assert r.rate("USD", pd.Timestamp("2021-06-01", tz="UTC")) == pytest.approx(0.00125)
     assert r.rate("JPY", pd.Timestamp("2024-08-15", tz="UTC")) == pytest.approx(0.0025)
+
+
+def test_moomoo_option_fees_match_brief():
+    from tradex.costs.models import MoomooOptionCosts, model_for
+    c = model_for("options")
+    assert isinstance(c, MoomooOptionCosts)
+    t = ny("2026-01-05 10:00")
+    buy1 = sum(c.order_fees("SPY", +1, 1, 1.00, t).values())
+    assert buy1 == pytest.approx((1.99 + 0.99) * 1.09 + 0.013 + 0.02 + 0.0003)   # minimums bind
+    assert buy1 == pytest.approx(3.28, abs=0.01)
+    sell1 = c.order_fees("SPY", -1, 1, 1.00, t)
+    assert sell1["sec"] == pytest.approx(0.0000206 * 100) and sell1["finra_taf"] == pytest.approx(0.00279)
+    assert buy1 + sum(sell1.values()) == pytest.approx(6.56, abs=0.01)           # one-contract round trip
+    ten = sum(c.order_fees("SPY", +1, 10, 1.00, t).values())
+    assert ten / 10 == pytest.approx(1.07, abs=0.005)
+    assert c.order_fees("SPY", +1, 5000, 1.00, t)["occ"] == 55.0                  # OCC cap per trade

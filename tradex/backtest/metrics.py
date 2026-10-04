@@ -1,11 +1,12 @@
 """Performance statistics, including the probabilistic and deflated Sharpe ratios.
 
-Deflated Sharpe follows Bailey and Lopez de Prado (2014), written from memory:
-the expected maximum Sharpe of N unskilled trials is
-    SR0 = sqrt(V) * ((1 - g) * Z(1 - 1/N) + g * Z(1 - 1/(N e)))
+Deflated Sharpe follows Bailey and Lopez de Prado, "The Deflated Sharpe Ratio" (JPM 2014),
+eqs. (1)-(2): the expected maximum Sharpe of N unskilled trials is
+    SR0 = sqrt(V) * ((1 - g) * Zinv(1 - 1/N) + g * Zinv(1 - 1/(N e)))
 with g the Euler-Mascheroni constant and V the variance of the trial Sharpes, and
-    DSR = PSR(SR0) = Phi((SR - SR0) * sqrt(T - 1) / sqrt(1 - skew*SR + (kurt - 1)/4 * SR^2)).
-All Sharpe ratios inside PSR/DSR are per period (daily), not annualised.
+    DSR = PSR(SR0) = Z((SR - SR0) * sqrt(T - 1) / sqrt(1 - skew*SR + (kurt - 1)/4 * SR^2)),
+kurt being raw (not excess) kurtosis. All Sharpe ratios inside PSR/DSR are per period
+(daily), not annualised. Checked against the papers' worked examples in tests/test_dsr.py.
 """
 from __future__ import annotations
 
@@ -42,6 +43,21 @@ def max_drawdown(equity: pd.Series) -> float:
     return float((equity / equity.cummax() - 1).min())
 
 
+def psr_from_moments(sr: float, sr_benchmark: float, t: int, skew: float, kurt: float) -> float:
+    """PSR from summary statistics (Bailey and Lopez de Prado 2012, eq. 11). ``kurt`` is raw kurtosis."""
+    denom = 1 - skew * sr + (kurt - 1) / 4 * sr * sr
+    if t < 2 or denom <= 0:
+        return 0.0
+    return float(_N.cdf((sr - sr_benchmark) * math.sqrt(t - 1) / math.sqrt(denom)))
+
+
+def min_track_record_length(sr: float, sr_benchmark: float, skew: float, kurt: float, prob: float = 0.95) -> float:
+    """Observations needed for PSR(sr_benchmark) to reach ``prob`` (2012 paper, eq. 13)."""
+    if sr <= sr_benchmark:
+        return math.inf
+    return 1 + (1 - skew * sr + (kurt - 1) / 4 * sr * sr) * (_N.inv_cdf(prob) / (sr - sr_benchmark)) ** 2
+
+
 def probabilistic_sharpe(returns: pd.Series, sr_benchmark: float = 0.0) -> float:
     """Probability the true per-period Sharpe exceeds ``sr_benchmark`` (per-period units)."""
     r = returns.dropna()
@@ -51,10 +67,7 @@ def probabilistic_sharpe(returns: pd.Series, sr_benchmark: float = 0.0) -> float
     sr = r.mean() / r.std(ddof=1)
     skew = float(r.skew())
     kurt = float(r.kurt()) + 3.0  # pandas gives excess kurtosis
-    denom = 1 - skew * sr + (kurt - 1) / 4 * sr * sr
-    if denom <= 0:
-        return 0.0
-    return float(_N.cdf((sr - sr_benchmark) * math.sqrt(t - 1) / math.sqrt(denom)))
+    return psr_from_moments(float(sr), sr_benchmark, t, skew, kurt)
 
 
 def expected_max_sharpe(n_trials: int, trial_sr_variance: float) -> float:
@@ -68,6 +81,10 @@ def expected_max_sharpe(n_trials: int, trial_sr_variance: float) -> float:
 
 def deflated_sharpe(returns: pd.Series, n_trials: int, trial_sr_variance: float) -> float:
     return probabilistic_sharpe(returns, expected_max_sharpe(n_trials, trial_sr_variance))
+
+
+def dsr_from_moments(sr: float, t: int, skew: float, kurt: float, n_trials: int, trial_sr_variance: float) -> float:
+    return psr_from_moments(sr, expected_max_sharpe(n_trials, trial_sr_variance), t, skew, kurt)
 
 
 def wilson_lower(wins: int, n: int, z: float = 1.645) -> float:
