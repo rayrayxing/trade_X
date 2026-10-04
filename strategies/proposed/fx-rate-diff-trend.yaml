@@ -1,0 +1,24 @@
+id: fx-rate-diff-trend
+version: 1
+asset_class: forex
+family: carry
+hypothesis: A pair whose interest-rate differential has widened over the last quarter, and whose price trend agrees, keeps moving as markets reprice policy. Trade the change in the differential rather than its level.
+universe: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, USD_CAD, USD_CHF, NZD_USD, EUR_JPY, GBP_JPY]
+timeframes: {signal: D1}
+features:
+  rch: {fn: data.column, name: rate_chg}
+  tsm: {fn: data.column, name: ts_mom}
+entry:
+  long:  "rch > 0.0025 and tsm > 0"
+  short: "rch < -0.0025 and tsm < 0"
+exit:
+  stop_atr: 3.0
+  target_r: 3.0
+  max_bars: 40
+  long_when: "rch < 0 or tsm < 0"
+  short_when: "rch > 0 or tsm > 0"
+holding: {expected_hours: 960, crosses_rollover: true}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 4.0], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: rate-differential trend FX (policy-rate history injected via tradex.research.sources.RateSource)", author: claude, created: 2026-10-04}
+status: proposed

@@ -1,0 +1,25 @@
+id: fx-carry-vol-filter
+version: 1
+asset_class: forex
+family: carry
+hypothesis: Carry returns are fat-tailed because they unwind when volatility spikes. Hold the highest-carry pairs only while the pair's own realised volatility is below the 70th percentile of its history, and leave when it passes the 90th.
+universe: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, USD_CAD, USD_CHF, NZD_USD, EUR_JPY, GBP_JPY]
+timeframes: {signal: D1}
+features:
+  cry: {fn: data.column, name: carry}
+  cxs: {fn: data.column, name: carry_xs}
+  vp:  {fn: data.column, name: fxvol_pct}
+entry:
+  long:  "cxs >= 0.7 and cry > 0 and vp < 0.7"
+  short: "cxs <= 0.3 and cry < 0 and vp < 0.7"
+exit:
+  stop_atr: 3.0
+  target_r: 4.0
+  max_bars: 40
+  long_when: "cry <= 0 or vp > 0.9"
+  short_when: "cry >= 0 or vp > 0.9"
+holding: {expected_hours: 960, crosses_rollover: true}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 4.0], target_r: [3.0, 5.0]}
+provenance: {source: "catalog: carry with volatility filter (own-pair realised volatility in place of VIX)", author: claude, created: 2026-10-04}
+status: proposed
