@@ -1,0 +1,17 @@
+{
+  "news": [
+    {"id": 41001, "headline": "NVDA raises data center outlook after supplier checks", "author": "Benzinga Newsdesk",
+     "created_at": "2026-10-02T13:05:11Z", "updated_at": "2026-10-02T13:07:40Z",
+     "summary": "Supplier checks point to stronger demand.", "content": "", "images": [],
+     "url": "https://www.benzinga.com/news/26/10/41001", "symbols": ["NVDA"], "source": "benzinga"},
+    {"id": 41002, "headline": "AMD and NVDA shares move on export licence report", "author": "Reuters",
+     "created_at": "2026-10-02T14:20:00Z", "updated_at": "2026-10-02T14:20:00Z",
+     "summary": "", "content": "", "images": [], "url": "https://example.test/41002",
+     "symbols": ["AMD", "NVDA"], "source": "reuters"},
+    {"id": 41003, "headline": "Stocks to watch today: 12 movers", "author": "Roundup Desk",
+     "created_at": "2026-10-02T14:30:00Z", "updated_at": "2026-10-02T14:30:00Z",
+     "summary": "", "content": "", "images": [], "url": "https://example.test/41003",
+     "symbols": ["AAPL", "MSFT", "AMZN", "GOOGL", "META", "TSLA", "NFLX"], "source": "benzinga"}
+  ],
+  "next_page_token": "PAGE2TOKEN"
+}

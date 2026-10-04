@@ -1,0 +1,17 @@
+{
+  "status": "OK", "count": 3, "request_id": "fixture-1",
+  "next_url": "https://api.massive.com/v2/reference/news?cursor=CURSOR2",
+  "results": [
+    {"id": "m-1", "publisher": {"name": "The Motley Fool", "homepage_url": "https://www.fool.com/"},
+     "title": "Why NVDA stock jumped today", "author": "A Writer", "published_utc": "2026-10-02T15:00:00Z",
+     "article_url": "https://example.test/m-1", "tickers": ["NVDA"], "description": "",
+     "insights": [{"ticker": "NVDA", "sentiment": "positive", "sentiment_reasoning": "demand"}]},
+    {"id": "m-2", "publisher": {"name": "Investing.com"},
+     "title": "AMD and TSLA on the move", "published_utc": "2026-10-02T16:00:00Z",
+     "article_url": "https://example.test/m-2", "tickers": ["AMD", "TSLA"],
+     "insights": [{"ticker": "AMD", "sentiment": "neutral"}, {"ticker": "TSLA", "sentiment": "negative"}]},
+    {"id": "m-3", "publisher": {"name": "Benzinga"},
+     "title": "ZZZZ files for a share sale", "published_utc": "2026-10-02T16:30:00Z",
+     "article_url": "https://example.test/m-3", "tickers": ["ZZZZ"], "insights": []}
+  ]
+}
