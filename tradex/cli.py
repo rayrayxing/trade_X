@@ -11,6 +11,7 @@ import pandas as pd
 
 from tradex.backtest import metrics
 from tradex.backtest.engine import EngineConfig, run_backtest
+from tradex.backtest.holdout import research_view
 from tradex.backtest.validation import ValidationReport, WalkForwardConfig, walk_forward
 from tradex.data.providers import AlpacaProvider, CachedProvider, CsvProvider, MassiveProvider, OandaProvider
 from tradex.strategy.spec import StrategySpec, load_dir
@@ -28,7 +29,7 @@ def _load_data(spec: StrategySpec, data_dir: str, symbols: list[str] | None) -> 
             print(f"warning: no data file {p}", file=sys.stderr)
     if not out:
         raise SystemExit("no data found; run `tradex fetch` first")
-    return out
+    return research_view(out, spec.signal_tf)       # the locked holdout never reaches research
 
 
 def save_validation(rep: ValidationReport, spec: StrategySpec, out: Path) -> Path:
