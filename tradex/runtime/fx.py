@@ -10,13 +10,14 @@ from typing import Protocol
 
 import pandas as pd
 
-from tradex.costs.models import APPROX_USD_PER_UNIT
+from tradex.costs.models import APPROX_USD_PER_UNIT, RateMissing
 
 LIVE_MODES = {"paper", "live"}
 
 
-class MissingRate(LookupError):
-    pass
+class MissingRate(LookupError, RateMissing):
+    """No rate (or spread) to use. A LookupError, so the simulator waits instead of filling,
+    and a RateMissing, so cost-model callers block the trade the same way."""
 
 
 class RateSource(Protocol):
@@ -65,6 +66,27 @@ class MarketDataRates:
                     px = float(b["close"].iloc[-1])
                     return 1.0 / px if invert else px
         return _fallback(ccy, self.mode)
+
+
+class LiveQuoteRates:
+    """The Oanda QuoteBook as the core's rate and spread source: same quotes, but a missing
+    or stale quote raises MissingRate, which every caller (core, simulator, venues book,
+    cost model) treats as "block and alert"."""
+
+    def __init__(self, quotes):
+        self.quotes = quotes
+
+    def usd_per_unit(self, ccy: str, ts: pd.Timestamp | None = None) -> float:
+        try:
+            return self.quotes.usd_per_unit(ccy, ts)
+        except RateMissing as exc:
+            raise MissingRate(str(exc)) from None
+
+    def spread_pips(self, symbol: str, ts: pd.Timestamp | None = None) -> float:
+        try:
+            return self.quotes.spread_pips(symbol, ts)
+        except RateMissing as exc:
+            raise MissingRate(str(exc)) from None
 
 
 def rate_snapshot(rates: RateSource, ccys: set[str], ts: pd.Timestamp) -> dict[str, pd.Series]:

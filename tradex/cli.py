@@ -1,5 +1,5 @@
 """Command line (also `trade-x`): tradex setup | check | backtest | validate | select | fetch | compare-feeds |
-replay | why | verify-ledger | filters | command."""
+replay | why | verify-ledger | filters | command | run."""
 from __future__ import annotations
 
 import argparse
@@ -142,8 +142,16 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("opend-check", help="read-only report on local OpenD: quotas, entitlements, SIMULATE capabilities")
 
+    rn = sub.add_parser("run", help="paper/live runtime; --dry builds everything and prints readiness, no broker")
+    rn.add_argument("--mode", required=True, choices=["paper", "live"])
+    rn.add_argument("--dry", action="store_true", help="connect no broker, fetch nothing, print a readiness summary")
+    rn.add_argument("--strategies", default="strategies")
+    rn.add_argument("--runtime-config", default=None, help="default config/runtime.yaml")
+
     a = ap.parse_args(argv)
 
+    if a.cmd == "run":
+        return _run(a)
     if a.cmd == "opend-check":
         from tradex.data.opend_check import run
         return run()
@@ -236,6 +244,32 @@ def main(argv: list[str] | None = None) -> int:
         print(text)
         return 0
     return 1
+
+
+def _run(a) -> int:
+    from tradex import secrets
+    from tradex.core.ledger import Ledger
+    from tradex.data.guard import RealDataMissing, SyntheticDataRefused
+    from tradex.data.oanda import PriceStream, QuoteBook, instruments_to_stream
+    from tradex.runtime.build import VenuesMissing, build_runtime
+    from tradex.runtime.config import RuntimeConfig
+    if not a.dry:   # nothing to connect to yet: no ledger file, no fetch
+        print("refusing to start: no venue adapters yet (they live in tradex/execution and need Ray); "
+              "use --dry", file=sys.stderr)
+        return 2
+    specs = [s for s in load_dir(a.strategies) if not s.validate()]
+    cfg = RuntimeConfig.load(a.runtime_config)
+    fx = sorted({u for s in specs if s.asset_class == "forex" for u in s.universe if not u.startswith("$")})
+    try:
+        rt = build_runtime(a.mode, specs, Ledger(":memory:", run_id="dry"),
+                           history={"forex": OandaProvider(), "stocks": AlpacaProvider()},
+                           stream=PriceStream(instruments_to_stream(fx)), quotes=QuoteBook(cfg.quote_max_age_s),
+                           config=cfg, has_secret=secrets.has, dry=True)
+    except (SyntheticDataRefused, RealDataMissing, VenuesMissing, ValueError) as exc:
+        print(f"refusing to start: {exc}", file=sys.stderr)
+        return 2
+    print(rt.readiness())
+    return 0 if rt.ready else 1
 
 
 def _calendar_files(paths: list[str]) -> list[Path]:
