@@ -207,6 +207,7 @@ class TradingCore:
         state = BookState(br.equity(), self._legs(br), self.tier, self.fx)
         promoted = book == "ensemble" and all(self.spec_by_id[s].status == "live" for s in plan.strategies)
         verdict = self.gate.review(plan, state, bu, fee_fn, factor, promoted)
+        verdict.verdict_id = f"{did}-v"
         self.ledger.append(verdict)
         if verdict.outcome != "accepted":
             self._block(plan, "risk", "; ".join(verdict.reasons), close_t)
@@ -217,7 +218,7 @@ class TradingCore:
             return
         side = plan.direction
         req = OrderRequest(f"{did}-entry", did, plan.symbol, plan.asset_class, side, verdict.qty, "market", None,
-                           plan.stop, plan.targets[0], "entry", book)
+                           plan.stop, plan.targets[0], "entry", book, verdict_id=verdict.verdict_id)
         br.place(req)
         self.ledger.append(Order(did, req.client_order_id, close_t.isoformat(), plan.symbol, side, verdict.qty,
                                  "market", None, "entry", book))

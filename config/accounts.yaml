@@ -1,0 +1,24 @@
+# Venue accounts the agent may trade (Ray, 4 Oct 2026). Protected path.
+#
+# Phase 1 is paper only: Oanda practice and moomoo SIMULATE. The loader refuses any other
+# mode, and the order guard refuses any order for an account not listed here.
+#
+# Account IDs are never written in this file. Leave `account_id` empty: `trade-x setup`
+# stores the ID in the macOS Keychain under the secret named in `secret`, and the loader
+# reads it from there. An account whose ID cannot be resolved is not agent-owned.
+accounts:
+  - name: oanda-practice
+    venue: oanda
+    mode: paper
+    environment: practice
+    asset_classes: [forex]
+    secret: oanda_account_id
+    account_id: ""
+
+  - name: moomoo-simulate
+    venue: moomoo
+    mode: paper
+    environment: SIMULATE
+    asset_classes: [stocks]
+    secret: moomoo_sim_account_id
+    account_id: ""
