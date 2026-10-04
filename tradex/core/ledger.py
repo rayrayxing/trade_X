@@ -8,7 +8,8 @@
   the config hash, so any trade can be printed in full by decision ID (``why``) and read
   against the rules of its day.
 - Agents and Telegram never talk to the core directly: they write ``commands`` and
-  ``agent_output`` rows, and the core applies them on its next cycle.
+  ``agent_inbox`` rows through ``Mailbox`` (which cannot touch ``events``), and the core
+  ingests them each bar (``tradex.core.inbox``) and records what it applied.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from typing import Any, Iterator
 from tradex.core.records import RECORD_TYPES, ConfigVersion, Record
 
 GENESIS = "0" * 64
+BUSY_MS = 5000  # several processes share the file; wait instead of failing with "database is locked"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -51,6 +53,34 @@ CREATE TABLE IF NOT EXISTS commands (
     args        TEXT NOT NULL DEFAULT '{}',
     applied_at  TEXT,
     result      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_inbox (
+    id          INTEGER PRIMARY KEY,
+    time        TEXT NOT NULL,
+    source      TEXT NOT NULL,          -- agent name, telegram or dashboard
+    action      TEXT NOT NULL,          -- veto | shrink | close | flag (the core ignores anything else)
+    target      TEXT NOT NULL,          -- symbol or decision ID
+    body        TEXT NOT NULL DEFAULT '{}',
+    applied_at  TEXT,
+    result      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_calls (
+    id            INTEGER PRIMARY KEY,
+    time          TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    route         TEXT NOT NULL,        -- the route tried that answered (or the last one that failed)
+    provider      TEXT,                 -- who ACTUALLY answered, from the response
+    model         TEXT,
+    ok            INTEGER NOT NULL,
+    latency_ms    INTEGER,
+    tokens_in     INTEGER,
+    tokens_out    INTEGER,
+    prompt_hash   TEXT,
+    response_hash TEXT,
+    error         TEXT,
+    attempts      TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -99,11 +129,13 @@ class Ledger:
         self._lock = threading.Lock()
         if read_only:
             uri = f"file:{self.path}?mode=ro"
-            self.db = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            self.db = sqlite3.connect(uri, uri=True, check_same_thread=False, timeout=BUSY_MS / 1000)
+            self.db.execute(f"PRAGMA busy_timeout={BUSY_MS}")
         else:
             if self.path != ":memory:":
                 Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-            self.db = sqlite3.connect(self.path, check_same_thread=False)
+            self.db = sqlite3.connect(self.path, check_same_thread=False, timeout=BUSY_MS / 1000)
+            self.db.execute(f"PRAGMA busy_timeout={BUSY_MS}")
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=NORMAL")
             self.db.executescript(SCHEMA)
@@ -143,6 +175,12 @@ class Ledger:
         with self._lock, self.db:
             cur = self.db.execute("INSERT INTO commands (time, source, command, args) VALUES (?,?,?,?)",
                                   (time, source, command, json.dumps(args or {})))
+            return int(cur.lastrowid)
+
+    def add_agent_inbox(self, time: str, source: str, action: str, target: str, body: dict | None = None) -> int:
+        with self._lock, self.db:
+            cur = self.db.execute("INSERT INTO agent_inbox (time, source, action, target, body) VALUES (?,?,?,?,?)",
+                                  (time, source, action, target, json.dumps(body or {}, default=str)))
             return int(cur.lastrowid)
 
     def pending_commands(self) -> list[sqlite3.Row]:
