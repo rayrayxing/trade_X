@@ -1,6 +1,7 @@
 id: stk-macd-trend-candle
 version: 1
 asset_class: stocks
+family: momentum
 hypothesis: A MACD signal-line cross in the direction of the 50-day trend, confirmed by a bullish or bearish candlestick vote at the 20-day EMA, times trend continuation.
 universe: [SPY, QQQ, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
 timeframes: {signal: D1, filter: W1}

@@ -1,6 +1,7 @@
 id: fx-trend-pullback-engulfing
 version: 3
 asset_class: forex
+family: candlestick
 hypothesis: In a daily uptrend, a pullback to the hourly 20 EMA that prints an engulfing candle resumes the trend.
 universe: [EUR_USD, GBP_USD, USD_JPY]
 timeframes: {signal: H1, filter: D1}

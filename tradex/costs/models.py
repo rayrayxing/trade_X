@@ -38,18 +38,25 @@ class CostModel(Protocol):
 class MoomooStockCosts:
     """Moomoo SG US-stock costs.
 
-    Platform fee US$0.99 per order and zero commission are from the thread-1 design doc
-    (MoneySmart, 3 Oct 2026). The settlement fee and the SEC/FINRA rates are from memory
-    and should be checked against Moomoo's fee page and the current SEC Section 31 rate.
+    From moomoo SG's fee page (https://www.moomoo.com/sg/support/topic5_76, checked
+    2026-10-04): zero commission, US$0.99 platform fee per order plus 9% GST, settlement
+    US$0.003/share capped at 1% of the order's value, CAT US$0.000003/share. SEC Section 31
+    rate US$20.60 per million of sale proceeds from 4 Apr 2026 (SEC fee rate advisory
+    2026-2); FINRA TAF US$0.000195/share capped at US$9.79 for 2026, rising to
+    US$0.000232 and US$11.61 on 1 Jan 2027 (SR-FINRA-2024-019).
     """
 
     asset_class: str = "stocks"
     commission: float = 0.0
     platform_fee: float = 0.99
+    gst: float = 0.09                       # on commission and platform fee
     settlement_fee_per_share: float = 0.003
-    sec_fee_rate: float = 27.80e-6          # USD per USD of sale proceeds
-    finra_taf_per_share: float = 0.000166   # sells only
-    finra_taf_max: float = 8.30
+    settlement_cap_pct: float = 0.01        # of the order's value
+    cat_fee_per_share: float = 0.000003
+    sec_fee_rate: float = 20.60e-6          # USD per USD of sale proceeds
+    finra_taf_per_share: float = 0.000195   # sells only
+    finra_taf_max: float = 9.79
+    min_regulatory_fee: float = 0.01        # SEC and TAF each
     half_spread_bps: dict[str, float] = field(default_factory=dict)
     default_half_spread_bps: float = 1.0
     slippage_bps: float = 2.0
@@ -65,11 +72,12 @@ class MoomooStockCosts:
         return mid + side * (hs + sl), {"spread": hs, "slippage": sl}
 
     def order_fees(self, symbol, side, qty, price, ts):
-        fees = {"platform": self.platform_fee, "commission": self.commission,
-                "settlement": self.settlement_fee_per_share * qty}
+        fees = {"platform": self.platform_fee * (1 + self.gst), "commission": self.commission * (1 + self.gst),
+                "settlement": min(self.settlement_fee_per_share * qty, self.settlement_cap_pct * qty * price),
+                "cat": self.cat_fee_per_share * qty}
         if side < 0:
-            fees["sec"] = self.sec_fee_rate * qty * price
-            fees["finra_taf"] = min(self.finra_taf_per_share * qty, self.finra_taf_max)
+            fees["sec"] = max(self.sec_fee_rate * qty * price, self.min_regulatory_fee)
+            fees["finra_taf"] = max(min(self.finra_taf_per_share * qty, self.finra_taf_max), self.min_regulatory_fee)
         return fees
 
     def holding_cost(self, symbol, direction, qty, price, t0, t1, base_to_usd=1.0, borrowed_usd=0.0):

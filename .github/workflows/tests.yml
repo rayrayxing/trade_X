@@ -8,9 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Protected paths (agent branches only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: python tools/check_protected_paths.py --base "origin/$BASE_REF" --head-ref "$HEAD_REF"
       - run: pip install -e '.[dev]'
       - run: python -m tradex check strategies
       - run: pytest -q

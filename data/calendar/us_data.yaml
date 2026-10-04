@@ -1,0 +1,12 @@
+# US data releases. CPI dates from https://www.bls.gov/schedule/news_release/cpi.htm (checked 2026-10-04).
+# Jobs report (nfp) and 2027 CPI dates are not in yet: BLS publishes them all in
+# https://www.bls.gov/schedule/news_release/bls.ics, which the runtime should import.
+events:
+- time: '2026-11-10T13:30:00Z'
+  kind: cpi
+  scope: USD
+  note: CPI 08:30 ET
+- time: '2026-12-10T13:30:00Z'
+  kind: cpi
+  scope: USD
+  note: CPI 08:30 ET

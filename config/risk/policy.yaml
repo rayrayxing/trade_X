@@ -1,0 +1,69 @@
+# Risk policy. PROTECTED PATH: agent pull requests that change anything under
+# config/risk/ are rejected by tools/check_protected_paths.py. Changes need a commit
+# from Ray's account, never during a drawdown, and are listed in the daily report.
+#
+# Order of a trade (Ray, 4 Oct 2026): strategy qualified -> plan finalised -> context
+# vetoes -> this risk gate sets the size. The gate never moves entry, stop or targets.
+
+plan:
+  min_families: 2              # independent families that must agree before a plan is formed
+  family_signal_corr: 0.7      # strategies whose signals correlate above this share one family vote
+  min_score: 0.25              # weighted family score needed (0..1)
+  max_opposing_strength: 0.6   # a family voting the other way this strongly blocks the plan
+  min_reward_risk: 1.5         # reward to risk to target 1, after round-trip costs
+
+sizing:
+  kelly_fraction: 0.25         # quarter Kelly on the plan's probability
+  per_trade_cap_pct: 3.0       # equity % at risk per trade before a strategy is past paper
+  per_trade_cap_promoted_pct: 5.0
+  min_fee_share_of_edge: 0.10  # reject when round-trip fees exceed this share of expected profit
+
+book:
+  heat_cap_pct: 12.0           # summed loss-to-stop across open positions; scenario simulation may revise
+  max_positions: 10
+  currency_stop_risk_cap_pct: 6.0   # per non-USD currency, loss-to-stop attributed to that currency
+  es_budget_pct: 5.0           # one-day 97.5% expected shortfall of the whole book
+  stress_loss_cap_pct: 35.0    # worst named scenario loss
+  # Governor tiers: the book starts at tier 2. Leverage is gross notional / equity per asset
+  # class; 14x forex is 70% of the 20:1 MAS retail cap and is only reachable at tier 5.
+  start_tier: 2
+  tiers:
+    1: {size_multiplier: 0.5, max_leverage: {forex: 2.0, stocks: 1.0}}
+    2: {size_multiplier: 1.0, max_leverage: {forex: 5.0, stocks: 1.0}}
+    3: {size_multiplier: 1.0, max_leverage: {forex: 8.0, stocks: 1.5}}
+    4: {size_multiplier: 1.0, max_leverage: {forex: 11.0, stocks: 2.0}}
+    5: {size_multiplier: 1.0, max_leverage: {forex: 14.0, stocks: 2.0}}
+
+hedging:
+  # Hedges are placed by code only, to bring a currency or factor back under its cap or to
+  # pass a stress replay. Never for profit. Agents may only suggest.
+  enabled: false
+
+shorts:
+  max_borrow_fee_annual: 0.20
+  max_short_interest_pct_float: 20.0
+  max_days_to_cover: 5.0
+  block_when_ssr: true
+
+sanity:
+  max_order_notional_x_equity: 15.0
+  max_price_deviation: 0.05
+
+# Named stress replays. Shocks are approximate moves over each episode, written from
+# memory (4 Oct 2026) and still to be checked against price history before they gate
+# real money. Positive = the factor rose against USD.
+scenarios:
+  - name: yen_carry_unwind_2024
+    note: "USDJPY about 162 to 142, July to early August 2024; equities fell"
+    shocks: {"FX:JPY": 0.13, "FX:AUD": -0.05, "FX:NZD": -0.05}
+    default_equity: -0.08
+  - name: franc_unpeg_2015
+    note: "EURCHF 1.20 to about 1.0 on 15 Jan 2015; used as a gap template"
+    shocks: {"FX:CHF": 0.20, "FX:EUR": -0.02}
+  - name: march_2020
+    note: "S&P 500 about -34% peak to trough; dollar rally"
+    shocks: {"FX:EUR": -0.04, "FX:GBP": -0.10, "FX:AUD": -0.12, "FX:CAD": -0.07, "FX:JPY": 0.02}
+    default_equity: -0.30
+  - name: single_stock_earnings_gap
+    note: "the largest single-stock position gaps 20% against it"
+    single_name_gap: 0.20

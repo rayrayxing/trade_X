@@ -1,6 +1,7 @@
 id: stk-double-bottom-breakout
 version: 1
 asset_class: stocks
+family: chart_pattern
 hypothesis: A confirmed double bottom whose neckline breaks with a bullish candle near the second low marks a reversal; the measured move is about the pattern height.
 universe: [$watchlist, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
 timeframes: {signal: D1}

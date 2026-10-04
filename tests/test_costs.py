@@ -12,11 +12,17 @@ def ny(s):
 def test_moomoo_fees_buy_and_sell():
     c = MoomooStockCosts()
     buy = c.order_fees("NVDA", +1, 100, 120.0, ny("2026-01-05 10:00"))
-    assert buy["platform"] == 0.99 and buy["commission"] == 0
+    assert buy["platform"] == pytest.approx(0.99 * 1.09) and buy["commission"] == 0
+    assert buy["settlement"] == pytest.approx(0.30) and buy["cat"] == pytest.approx(0.0003)
     assert "sec" not in buy
     sell = c.order_fees("NVDA", -1, 100, 120.0, ny("2026-01-05 15:00"))
-    assert sell["sec"] == pytest.approx(27.80e-6 * 100 * 120)
-    assert sell["finra_taf"] == pytest.approx(0.0166)
+    assert sell["sec"] == pytest.approx(20.60e-6 * 100 * 120)
+    assert sell["finra_taf"] == pytest.approx(0.0195)
+    penny = c.order_fees("XYZ", -1, 1000, 0.2, ny("2026-01-05 15:00"))
+    assert penny["settlement"] == pytest.approx(2.0)           # capped at 1% of order value
+    small = c.order_fees("XYZ", -1, 10, 0.5, ny("2026-01-05 15:00"))
+    assert small["sec"] == 0.01 and small["finra_taf"] == 0.01 # regulatory minimums
+    assert c.order_fees("XYZ", -1, 100_000, 5.0, ny("2026-01-05 15:00"))["finra_taf"] == 9.79
 
 
 def test_stock_fill_pays_spread_and_slippage():

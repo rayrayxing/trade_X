@@ -1,0 +1,9 @@
+# Paths agent pull requests may never change (Ray, 4 Oct 2026). Checked by
+# tools/check_protected_paths.py in CI. This file is itself protected.
+config/risk/
+config/gates/
+tradex/execution/
+tradex/risk/
+config/protected_paths.txt
+tools/check_protected_paths.py
+.github/workflows/

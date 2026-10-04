@@ -1,6 +1,7 @@
 id: fx-donchian-breakout-h4
 version: 1
 asset_class: forex
+family: breakout
 hypothesis: Breakouts of a 4-hour 55-bar range in the direction of the daily trend capture trend persistence in FX (turtle-style).
 universe: [EUR_USD, USD_JPY, GBP_USD, AUD_USD, GBP_JPY, EUR_JPY]
 timeframes: {signal: H4, filter: D1}
