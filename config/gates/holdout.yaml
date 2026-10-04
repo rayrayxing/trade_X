@@ -1,0 +1,11 @@
+# Locked holdout (spec C4). PROTECTED PATH: only Ray changes this file.
+#
+# Bars that open at or after `start` are hidden from research: `tradex validate`,
+# `tradex backtest` and walk-forward never see them. A strategy gets one look at the
+# holdout per version, recorded in the looks ledger; a second look is refused, so the
+# holdout cannot be tuned against.
+#
+# Default (4 Oct 2026): the 12 months before the lock date. Move it forward only by a
+# commit from Ray, and only after every strategy with a recorded look has been judged.
+start: "2025-10-01T00:00:00Z"
+looks_ledger: data/holdout/looks.jsonl
