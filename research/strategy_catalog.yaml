@@ -1,0 +1,752 @@
+- family: Trend and time-series momentum
+  name: 12-month time-series momentum, vol-scaled
+  asset: FX, stocks, ETFs
+  horizon: Weeks to months
+  data: Daily bars
+  source: Moskowitz, Ooi, Pedersen 2012; [arXiv 1904.04912](https://arxiv.org/abs/1904.04912)
+  data_today: 'Yes'
+  status: 'Screened: no FX edge since 2000'
+  arxiv:
+  - '1904.04912'
+- family: Trend and time-series momentum
+  name: Moving-average crossover (50/200, 10-month)
+  asset: FX, ETFs
+  horizon: Weeks to months
+  data: Daily bars
+  source: Faber 2007; [arXiv 1907.00212](https://arxiv.org/abs/1907.00212)
+  data_today: 'Yes'
+  status: 'Screened: cuts equity drawdown, no FX edge'
+  arxiv:
+  - '1907.00212'
+- family: Trend and time-series momentum
+  name: Donchian channel breakout
+  asset: FX, stocks
+  horizon: Days to weeks
+  data: Daily or H4 bars
+  source: Turtle rules; [arXiv 2607.19497](https://arxiv.org/abs/2607.19497)
+  data_today: 'Yes'
+  status: 'Seed; screened: no FX edge since 2016'
+  arxiv:
+  - '2607.19497'
+- family: Trend and time-series momentum
+  name: Deep momentum network (LSTM trained on Sharpe)
+  asset: FX, ETFs
+  horizon: Days to weeks
+  data: Daily bars
+  source: Lim, Zohren, Roberts 2019 [arXiv 1904.04912](https://arxiv.org/abs/1904.04912)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '1904.04912'
+- family: Trend and time-series momentum
+  name: Momentum Transformer with changepoints
+  asset: FX, ETFs
+  horizon: Days to weeks
+  data: Daily bars
+  source: Wood et al. [arXiv 2112.08534](https://arxiv.org/abs/2112.08534)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2112.08534'
+- family: Trend and time-series momentum
+  name: Slow momentum with fast reversion (changepoint detection)
+  asset: FX, ETFs
+  horizon: Days
+  data: Daily bars
+  source: Wood, Roberts, Zohren [arXiv 2105.13727](https://arxiv.org/abs/2105.13727)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2105.13727'
+- family: Trend and time-series momentum
+  name: Dynamic momentum learning (adaptive lookback)
+  asset: FX, ETFs
+  horizon: Days to weeks
+  data: Daily bars
+  source: Levy, Lopes [arXiv 2106.08420](https://arxiv.org/abs/2106.08420)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2106.08420'
+- family: Trend and time-series momentum
+  name: Few-shot trend patterns for new regimes
+  asset: FX, ETFs
+  horizon: Days
+  data: Daily bars
+  source: Wood et al. [arXiv 2310.10500](https://arxiv.org/abs/2310.10500)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2310.10500'
+- family: Trend and time-series momentum
+  name: Large-tick trend filter (trade trend only where tick size is large)
+  asset: FX, stocks
+  horizon: Hours to days
+  data: Intraday bars, tick size
+  source: Kurth, Eisler, Rej, Bouchaud 2026 [arXiv 2607.01550](https://arxiv.org/abs/2607.01550)
+  data_today: 'Yes'
+  status: 'Build: filter for all trend strategies'
+  arxiv:
+  - '2607.01550'
+- family: Trend and time-series momentum
+  name: EMA pullback swing (seed)
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: Repo seed stk-ema-pullback-swing
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Trend and time-series momentum
+  name: MACD trend with candle confirmation (seed)
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: Repo seed stk-macd-trend-candle
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Trend and time-series momentum
+  name: Trend pullback with engulfing candle (seed)
+  asset: FX
+  horizon: Hours to days
+  data: H4 bars
+  source: Repo seed fx-trend-pullback-engulfing
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Cross-sectional momentum and ranking
+  name: Stock momentum 12-1 months
+  asset: Stocks
+  horizon: Months
+  data: Daily bars, point-in-time universe
+  source: Jegadeesh, Titman 1993
+  data_today: 'Partial: needs delisted names'
+  status: Needs data
+  arxiv: []
+- family: Cross-sectional momentum and ranking
+  name: Learning-to-rank cross-sectional momentum
+  asset: Stocks, FX
+  horizon: Weeks
+  data: Daily bars
+  source: Poh et al. [arXiv 2012.07149](https://arxiv.org/abs/2012.07149)
+  data_today: Partial
+  status: Build
+  arxiv:
+  - '2012.07149'
+- family: Cross-sectional momentum and ranking
+  name: Joint time-series and cross-sectional strategy
+  asset: Stocks, FX
+  horizon: Weeks
+  data: Daily bars
+  source: Joint learning [arXiv 2302.10175](https://arxiv.org/abs/2302.10175)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2302.10175'
+- family: Cross-sectional momentum and ranking
+  name: Transfer ranking with scarce data
+  asset: FX
+  horizon: Weeks
+  data: Daily bars
+  source: Poh et al. [arXiv 2208.09968](https://arxiv.org/abs/2208.09968)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2208.09968'
+- family: Cross-sectional momentum and ranking
+  name: Uncertainty-gated stock ranker (skip when model unsure)
+  asset: Stocks
+  horizon: Days to weeks
+  data: Daily bars, features
+  source: Two-level uncertainty [arXiv 2603.13252](https://arxiv.org/abs/2603.13252)
+  data_today: Partial
+  status: 'Build: gate for every ranker'
+  arxiv:
+  - '2603.13252'
+- family: Cross-sectional momentum and ranking
+  name: Currency momentum with context (cross-section)
+  asset: FX
+  horizon: Weeks
+  data: Daily bars
+  source: Poh et al. [arXiv 2105.10019](https://arxiv.org/abs/2105.10019); Menkhoff
+    et al. 2012
+  data_today: 'Yes'
+  status: 'Screened: weak'
+  arxiv:
+  - '2105.10019'
+- family: Cross-sectional momentum and ranking
+  name: 52-week-high momentum
+  asset: Stocks
+  horizon: Months
+  data: Daily bars
+  source: George, Hwang 2004
+  data_today: 'Yes'
+  status: Build
+  arxiv: []
+- family: Cross-sectional momentum and ranking
+  name: Momentum with crash protection (vol-scaled)
+  asset: Stocks
+  horizon: Months
+  data: Daily bars
+  source: Barroso, Santa-Clara 2015; Daniel, Moskowitz 2016
+  data_today: Partial
+  status: Needs data
+  arxiv: []
+- family: Cross-sectional momentum and ranking
+  name: Relative strength vs sector
+  asset: Stocks
+  horizon: Weeks
+  data: Daily bars, sector map
+  source: LLM sector allocation [arXiv 2503.09647](https://arxiv.org/abs/2503.09647)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2503.09647'
+- family: Mean reversion and statistical arbitrage
+  name: RSI(2) pullback in uptrend (seed)
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: Repo seed stk-rsi2-meanrev
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Mean reversion and statistical arbitrage
+  name: RSI range reversion (seed)
+  asset: FX
+  horizon: Hours to days
+  data: H4 bars
+  source: Repo seed fx-rsi-range-reversion
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Mean reversion and statistical arbitrage
+  name: Short-term reversal (5-day)
+  asset: FX, stocks
+  horizon: Days
+  data: Daily bars
+  source: Lehmann 1990
+  data_today: 'Yes'
+  status: 'Screened: negative in FX'
+  arxiv: []
+- family: Mean reversion and statistical arbitrage
+  name: Pairs trading (distance and cointegration)
+  asset: Stocks
+  horizon: Days to weeks
+  data: Daily bars
+  source: Gatev, Goetzmann, Rouwenhorst 2006; [arXiv 2406.10695](https://arxiv.org/abs/2406.10695)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2406.10695'
+- family: Mean reversion and statistical arbitrage
+  name: Deep learning statistical arbitrage (residual portfolios)
+  asset: Stocks
+  horizon: Days
+  data: Daily bars, factor returns
+  source: Guijarro-Ordonez, Pelger [arXiv 2106.04028](https://arxiv.org/abs/2106.04028)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2106.04028'
+- family: Mean reversion and statistical arbitrage
+  name: Robust data-driven stat-arb
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: Neufeld, Sester [arXiv 2203.03179](https://arxiv.org/abs/2203.03179)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2203.03179'
+- family: Mean reversion and statistical arbitrage
+  name: Reinforcement-learning stat-arb
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: RL stat-arb [arXiv 2403.12180](https://arxiv.org/abs/2403.12180)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2403.12180'
+- family: Mean reversion and statistical arbitrage
+  name: FX triplet (triangular) relative value
+  asset: FX
+  horizon: Hours
+  data: Intraday bars
+  source: Cartea, Jaimungal, Jia [arXiv 2004.12011](https://arxiv.org/abs/2004.12011)
+  data_today: 'Yes'
+  status: 'Watch: a pure arbitrage signal is a data alarm'
+  arxiv:
+  - '2004.12011'
+- family: Earnings and company events
+  name: Post-earnings announcement drift
+  asset: Stocks
+  horizon: Days to weeks
+  data: Earnings dates, surprise, bars
+  source: Bernard, Thomas 1989; [arXiv 2009.03094](https://arxiv.org/abs/2009.03094)
+  data_today: 'Partial: needs EPS estimates'
+  status: Needs data
+  arxiv:
+  - '2009.03094'
+- family: Earnings and company events
+  name: Earnings-day jump continuation
+  asset: Stocks
+  horizon: Days
+  data: Intraday bars, earnings dates
+  source: Christensen et al. [arXiv 2601.08962](https://arxiv.org/abs/2601.08962)
+  data_today: Partial
+  status: Build
+  arxiv:
+  - '2601.08962'
+- family: Earnings and company events
+  name: Retail-horizon earnings effect
+  asset: Stocks
+  horizon: Days
+  data: Earnings dates, retail flow
+  source: Vamossy [arXiv 2512.00280](https://arxiv.org/abs/2512.00280)
+  data_today: 'No'
+  status: Needs data
+  arxiv:
+  - '2512.00280'
+- family: Earnings and company events
+  name: Pre-earnings run-up and IV crush (options)
+  asset: Options
+  horizon: Days
+  data: Earnings dates, option IV
+  source: Earnings options literature; [arXiv 2601.08962](https://arxiv.org/abs/2601.08962)
+  data_today: Partial
+  status: Build
+  arxiv:
+  - '2601.08962'
+- family: Earnings and company events
+  name: Gap-and-go after news gap
+  asset: Stocks
+  horizon: Intraday
+  data: Intraday bars, gaps
+  source: Overnight news [arXiv 2507.04481](https://arxiv.org/abs/2507.04481)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2507.04481'
+- family: Macro and central-bank events
+  name: Pre-FOMC announcement drift
+  asset: Stocks, ETFs
+  horizon: 1 day
+  data: Event calendar, bars
+  source: Lucca, Moench 2015
+  data_today: 'Yes'
+  status: Build
+  arxiv: []
+- family: Macro and central-bank events
+  name: Macro-news order-flow reaction
+  asset: FX, ETFs
+  horizon: Minutes to hours
+  data: Intraday bars, calendar
+  source: Order-flow imbalance and macro news [arXiv 2508.06788](https://arxiv.org/abs/2508.06788)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2508.06788'
+- family: Macro and central-bank events
+  name: Rate-differential trend (FX)
+  asset: FX
+  horizon: Weeks
+  data: Policy rates, bars
+  source: Lustig, Roussanov, Verdelhan 2011
+  data_today: 'Partial: needs official rates'
+  status: Needs data
+  arxiv: []
+- family: Carry and rates
+  name: G10 carry (long high-rate, short low-rate)
+  asset: FX
+  horizon: Months
+  data: Oanda financing rates, bars
+  source: Lustig et al. 2011; Menkhoff et al. 2012
+  data_today: 'Partial: Oanda financing live, history needed'
+  status: Needs data
+  arxiv: []
+- family: Carry and rates
+  name: Carry with volatility filter
+  asset: FX
+  horizon: Weeks to months
+  data: Rates, VIX, bars
+  source: Volatility shocks and currency returns [arXiv 2101.09738](https://arxiv.org/abs/2101.09738)
+  data_today: Partial
+  status: Needs data
+  arxiv:
+  - '2101.09738'
+- family: Carry and rates
+  name: Reinforcement learning FX allocation
+  asset: FX
+  horizon: Days to weeks
+  data: Daily bars, rates
+  source: RL for systematic FX [arXiv 2110.04745](https://arxiv.org/abs/2110.04745)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2110.04745'
+- family: Volatility and regime
+  name: Volatility-managed exposure
+  asset: Stocks, ETFs
+  horizon: Monthly
+  data: VIX or realised vol
+  source: Moreira, Muir 2017
+  data_today: 'Yes'
+  status: 'Screened: no gain after bias fix'
+  arxiv: []
+- family: Volatility and regime
+  name: Buy equity after VIX spike above 30
+  asset: ETFs
+  horizon: 1 to 3 months
+  data: VIX daily, bars
+  source: VIX mean reversion
+  data_today: 'Yes'
+  status: 'Screened: positive'
+  arxiv: []
+- family: Volatility and regime
+  name: Hidden Markov regime allocation
+  asset: Stocks, FX
+  horizon: Weeks
+  data: Daily bars
+  source: HMM and RL allocation [arXiv 2605.27848](https://arxiv.org/abs/2605.27848)
+  data_today: 'Yes'
+  status: 'Build: regime input for ensemble'
+  arxiv:
+  - '2605.27848'
+- family: Volatility and regime
+  name: Realised-covariance regime detection
+  asset: Stocks, FX
+  horizon: Weeks
+  data: Daily bars
+  source: Market regime detection [arXiv 2104.03667](https://arxiv.org/abs/2104.03667)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2104.03667'
+- family: Volatility and regime
+  name: Explainable regime-aware investing
+  asset: ETFs
+  horizon: Weeks
+  data: Daily bars, macro
+  source: Boukardagha [arXiv 2603.04441](https://arxiv.org/abs/2603.04441)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2603.04441'
+- family: Volatility and regime
+  name: Regime-switching volatility forecast for sizing
+  asset: Stocks, options
+  horizon: Days
+  data: Daily bars
+  source: S&P 500 regime vol forecasting [arXiv 2510.03236](https://arxiv.org/abs/2510.03236)
+  data_today: 'Yes'
+  status: 'Build: sizing input'
+  arxiv:
+  - '2510.03236'
+- family: 'Options: volatility premium'
+  name: Cash-secured short puts (delta-targeted)
+  asset: Options
+  horizon: Days to weeks
+  data: Option chain, IV, Greeks
+  source: VRP learning-to-rank [arXiv 2608.24786](https://arxiv.org/abs/2608.24786)
+  data_today: 'Partial: live only'
+  status: Needs data
+  arxiv:
+  - '2608.24786'
+- family: 'Options: volatility premium'
+  name: Covered calls on held stock
+  asset: Options
+  horizon: Weeks
+  data: Option chain, Greeks
+  source: Israelov, Nielsen 2015
+  data_today: 'Partial: live only'
+  status: Needs data
+  arxiv: []
+- family: 'Options: volatility premium'
+  name: IV minus realised-vol spread (sell rich, buy cheap)
+  asset: Options
+  horizon: Weeks
+  data: IV history, bars
+  source: Goyal, Saretto 2009
+  data_today: 'No: needs IV history'
+  status: Needs data
+  arxiv: []
+- family: 'Options: volatility premium'
+  name: Defined-risk short premium (credit spreads)
+  asset: Options
+  horizon: Days to weeks
+  data: Option chain, Greeks
+  source: VRP literature; [arXiv 2608.24786](https://arxiv.org/abs/2608.24786)
+  data_today: Partial
+  status: Needs data
+  arxiv:
+  - '2608.24786'
+- family: 'Options: volatility premium'
+  name: Long straddle before high-IV-expansion events
+  asset: Options
+  horizon: Days
+  data: Option chain, event calendar
+  source: Straddle DQN [arXiv 2509.07987](https://arxiv.org/abs/2509.07987)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2509.07987'
+- family: 'Options: directional and signals'
+  name: Long calls or puts on high-conviction plans
+  asset: Options
+  horizon: Days to weeks
+  data: Option chain, Greeks
+  source: Uses the ensemble plan; Coval, Shumway 2001 on option returns
+  data_today: 'Partial: live only'
+  status: 'Build: execution style, not a signal'
+  arxiv: []
+- family: 'Options: directional and signals'
+  name: Implied-skew signal for stock direction
+  asset: Stocks, options
+  horizon: Weeks
+  data: IV by strike
+  source: Xing, Zhang, Zhao 2010; [arXiv 1611.05518](https://arxiv.org/abs/1611.05518)
+  data_today: 'No'
+  status: Needs data
+  arxiv:
+  - '1611.05518'
+- family: 'Options: directional and signals'
+  name: Option-implied crash-risk signal
+  asset: Stocks, options
+  horizon: Weeks
+  data: IV surface history
+  source: Option-implied signals 2015-2026 [arXiv 2608.26115](https://arxiv.org/abs/2608.26115)
+  data_today: 'No'
+  status: Needs data
+  arxiv:
+  - '2608.26115'
+- family: 'Options: directional and signals'
+  name: Option factor tilts (jump tail, kurtosis, IV convexity)
+  asset: Stocks
+  horizon: Months
+  data: IV surface history
+  source: Walter, Zimmer, Ulrich [arXiv 2609.31263](https://arxiv.org/abs/2609.31263)
+  data_today: 'No'
+  status: Needs data
+  arxiv:
+  - '2609.31263'
+- family: 'Options: directional and signals'
+  name: Sentiment in the IV surface
+  asset: Options
+  horizon: Days
+  data: IV surface, news
+  source: Degree of irrationality [arXiv 2405.11730](https://arxiv.org/abs/2405.11730)
+  data_today: 'No'
+  status: Watch
+  arxiv:
+  - '2405.11730'
+- family: 'Options: directional and signals'
+  name: Deep hedging with the IV surface
+  asset: Options
+  horizon: Days
+  data: IV surface
+  source: Francois et al. [arXiv 2504.06208](https://arxiv.org/abs/2504.06208)
+  data_today: 'No'
+  status: 'Watch: risk tool'
+  arxiv:
+  - '2504.06208'
+- family: Intraday and microstructure
+  name: Intraday momentum (first half-hour predicts last)
+  asset: ETFs
+  horizon: Intraday
+  data: Intraday bars
+  source: Gao, Han, Li, Zhou 2018
+  data_today: 'Yes'
+  status: Build
+  arxiv: []
+- family: Intraday and microstructure
+  name: Overnight vs intraday return split
+  asset: Stocks
+  horizon: 1 day
+  data: Open and close prices
+  source: Suspicious overnight returns [arXiv 2010.01727](https://arxiv.org/abs/2010.01727)
+  data_today: 'Yes'
+  status: Build
+  arxiv:
+  - '2010.01727'
+- family: Intraday and microstructure
+  name: Intraday seasonality in the cross-section
+  asset: Stocks
+  horizon: Intraday
+  data: Intraday bars
+  source: Heston, Korajczyk, Sadka [arXiv 1005.3535](https://arxiv.org/abs/1005.3535)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '1005.3535'
+- family: Intraday and microstructure
+  name: Order-flow imbalance short-term signal
+  asset: Stocks
+  horizon: Seconds to minutes
+  data: Order book (OpenD LV3)
+  source: Price impact of OFI [arXiv 2112.13213](https://arxiv.org/abs/2112.13213);
+    [arXiv 2505.22678](https://arxiv.org/abs/2505.22678)
+  data_today: 'Yes: OpenD LV3'
+  status: 'Watch: too fast for a Mac on home internet'
+  arxiv:
+  - '2112.13213'
+  - '2505.22678'
+- family: Intraday and microstructure
+  name: Breakout with volume (seed)
+  asset: Stocks
+  horizon: Days
+  data: Daily bars, consolidated volume
+  source: Repo seed stk-breakout-volume
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: News and LLM sentiment
+  name: LLM news sentiment long-short
+  asset: Stocks
+  horizon: 1 day
+  data: News headlines
+  source: Kirtac, Germano [arXiv 2412.19245](https://arxiv.org/abs/2412.19245)
+  data_today: 'Partial: Alpaca news'
+  status: Build
+  arxiv:
+  - '2412.19245'
+- family: News and LLM sentiment
+  name: ChatGPT headline scoring
+  asset: Stocks
+  horizon: 1 day
+  data: News headlines
+  source: Lopez-Lira, Tang [arXiv 2304.07619](https://arxiv.org/abs/2304.07619)
+  data_today: Partial
+  status: Build
+  arxiv:
+  - '2304.07619'
+- family: News and LLM sentiment
+  name: LLM sentiment for S&P 500 trading
+  asset: ETFs
+  horizon: Days
+  data: News
+  source: Sentiment with LLMs [arXiv 2507.09739](https://arxiv.org/abs/2507.09739)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2507.09739'
+- family: News and LLM sentiment
+  name: LLM plus RL sentiment trading
+  asset: Stocks
+  horizon: Days
+  data: News, bars
+  source: LLM and RL [arXiv 2510.10526](https://arxiv.org/abs/2510.10526)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2510.10526'
+- family: News and LLM sentiment
+  name: LLM-enhanced systematic factor investing
+  asset: Stocks
+  horizon: Months
+  data: Filings, news
+  source: ChatGPT in systematic investing [arXiv 2510.26228](https://arxiv.org/abs/2510.26228)
+  data_today: 'No'
+  status: Needs data
+  arxiv:
+  - '2510.26228'
+- family: Chart and candlestick patterns
+  name: Double bottom breakout (seed)
+  asset: Stocks
+  horizon: Days to weeks
+  data: Daily bars
+  source: Repo seed; Lo, Mamaysky, Wang 2000
+  data_today: 'Yes'
+  status: Seed
+  arxiv: []
+- family: Chart and candlestick patterns
+  name: CNN on candlestick chart images
+  asset: Stocks, FX
+  horizon: Days
+  data: Bars rendered as images
+  source: CNN market strength [arXiv 2501.12239](https://arxiv.org/abs/2501.12239);
+    [arXiv 1907.10046](https://arxiv.org/abs/1907.10046)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2501.12239'
+  - '1907.10046'
+- family: Chart and candlestick patterns
+  name: Deep chart-pattern recognition (head and shoulders, triangles)
+  asset: Stocks, FX
+  horizon: Days to weeks
+  data: Daily bars
+  source: Velay, Daniel [arXiv 1808.00418](https://arxiv.org/abs/1808.00418)
+  data_today: 'Yes'
+  status: 'Build: fills catalog gaps'
+  arxiv:
+  - '1808.00418'
+- family: Chart and candlestick patterns
+  name: TA indicators plus ML classifier
+  asset: Stocks
+  horizon: Days
+  data: Daily bars
+  source: TA with ML/DL [arXiv 2304.09936](https://arxiv.org/abs/2304.09936)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2304.09936'
+- family: Short side and flows
+  name: Short high borrow-fee, high short-interest names
+  asset: Stocks
+  horizon: Weeks
+  data: Borrow fee, short interest (OpenD)
+  source: Engelberg, Reed, Ringgenberg 2018
+  data_today: 'Yes: OpenD'
+  status: Build
+  arxiv: []
+- family: Short side and flows
+  name: Short-seller flow signal
+  asset: Stocks
+  horizon: Weeks
+  data: Short volume history (OpenD)
+  source: Boehmer, Jones, Zhang 2008
+  data_today: 'Yes: OpenD'
+  status: Build
+  arxiv: []
+- family: Short side and flows
+  name: Insider buying (Form 4)
+  asset: Stocks
+  horizon: Months
+  data: SEC Form 4 filings
+  source: Insider trading literature
+  data_today: 'No: free from SEC EDGAR'
+  status: Needs data
+  arxiv: []
+- family: Portfolio and meta
+  name: Interpretable deep model for stock returns
+  asset: Stocks
+  horizon: Months
+  data: Fundamentals, bars
+  source: Interpretable DL [arXiv 2512.16251](https://arxiv.org/abs/2512.16251)
+  data_today: Partial
+  status: Watch
+  arxiv:
+  - '2512.16251'
+- family: Portfolio and meta
+  name: Deep RL portfolio trading
+  asset: Stocks, FX
+  horizon: Days
+  data: Bars
+  source: Zhang, Zohren, Roberts [arXiv 1911.10107](https://arxiv.org/abs/1911.10107)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '1911.10107'
+- family: Portfolio and meta
+  name: Market-neutral deep RL
+  asset: Stocks
+  horizon: Days
+  data: Bars
+  source: AlphaZeroBeta [arXiv 2607.18001](https://arxiv.org/abs/2607.18001)
+  data_today: 'Yes'
+  status: Watch
+  arxiv:
+  - '2607.18001'
