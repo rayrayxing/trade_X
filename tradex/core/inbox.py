@@ -23,20 +23,23 @@ ALLOWED_ACTIONS = ("veto", "shrink", "close", "flag")
 WRITABLE = {"commands", "agent_inbox", "agent_calls"}
 
 
-def _authorizer(op: int, a1: str | None, a2: str | None, db: str | None, src: str | None) -> int:
-    writes = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
-    if op in writes and a1 not in WRITABLE and not (a1 or "").startswith("sqlite_"):
-        return sqlite3.SQLITE_DENY
-    if op in (sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_ALTER_TABLE, sqlite3.SQLITE_DROP_INDEX,
-              sqlite3.SQLITE_DROP_TRIGGER):
-        return sqlite3.SQLITE_DENY
-    return sqlite3.SQLITE_OK
+def _make_authorizer(writable: set[str]):
+    def auth(op: int, a1: str | None, a2: str | None, db: str | None, src: str | None) -> int:
+        writes = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
+        if op in writes and a1 not in writable and not (a1 or "").startswith("sqlite_"):
+            return sqlite3.SQLITE_DENY
+        if op in (sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_ALTER_TABLE, sqlite3.SQLITE_DROP_INDEX,
+                  sqlite3.SQLITE_DROP_TRIGGER):
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+    return auth
 
 
 class Mailbox:
     """The only write handle Telegram, the dashboard and agents get on the ledger file."""
 
-    def __init__(self, path: str | Path, init_schema: bool = True):
+    def __init__(self, path: str | Path, init_schema: bool = True, extra_schema: str = "",
+                 extra_writable: tuple[str, ...] = ()):
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -46,8 +49,8 @@ class Mailbox:
         self._lock = threading.Lock()
         if init_schema:  # IF NOT EXISTS only: safe to run next to the core
             self.db.execute("PRAGMA journal_mode=WAL")
-            self.db.executescript(SCHEMA)
-        self.db.set_authorizer(_authorizer)
+            self.db.executescript(SCHEMA + extra_schema)
+        self.db.set_authorizer(_make_authorizer(WRITABLE | set(extra_writable)))
 
     def add_command(self, time: str, source: str, command: str, args: dict | None = None) -> int:
         with self._lock, self.db:
