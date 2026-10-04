@@ -1,16 +1,16 @@
 """Historical bar providers.
 
-Keys are read from environment variables on Ray's machine and never stored in the
-repo. Nothing here places orders: these are read-only market-data endpoints.
+Keys come from the Keychain via ``tradex.secrets`` (set with ``trade-x setup``) and are
+never stored in the repo. Nothing here places orders: these are read-only market-data
+endpoints.
 
-  Alpaca:  ALPACA_API_KEY_ID, ALPACA_API_SECRET_KEY   (free IEX feed)
-  Massive: MASSIVE_API_KEY                             (free plan: EOD, 5 calls/min)
-  Oanda:   OANDA_API_TOKEN, OANDA_ENV=practice|live    (candles, mid prices)
+  Alpaca:  alpaca_key_id, alpaca_secret   (free IEX feed)
+  Massive: massive_key                    (free plan: EOD, 5 calls/min)
+  Oanda:   oanda_token                    (practice host only; mid candles)
 """
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.parse
 import urllib.request
@@ -19,6 +19,7 @@ from typing import Protocol
 
 import pandas as pd
 
+from tradex import secrets
 from tradex.data.bars import normalize_bars
 
 
@@ -67,13 +68,6 @@ def _get_json(url: str, headers: dict[str, str] | None = None, retries: int = 4)
     raise RuntimeError("unreachable")
 
 
-def _env(name: str) -> str:
-    val = os.environ.get(name)
-    if not val:
-        raise RuntimeError(f"set the {name} environment variable on the machine that runs this")
-    return val
-
-
 _ALPACA_TF = {"M1": "1Min", "M5": "5Min", "M15": "15Min", "M30": "30Min", "H1": "1Hour", "H4": "4Hour", "D1": "1Day"}
 
 
@@ -87,7 +81,7 @@ class AlpacaProvider:
         self.adjustment = adjustment
 
     def get_bars(self, symbol: str, tf: str, start: str, end: str) -> pd.DataFrame:
-        headers = {"APCA-API-KEY-ID": _env("ALPACA_API_KEY_ID"), "APCA-API-SECRET-KEY": _env("ALPACA_API_SECRET_KEY")}
+        headers = {"APCA-API-KEY-ID": secrets.get("alpaca_key_id"), "APCA-API-SECRET-KEY": secrets.get("alpaca_secret")}
         params = {
             "timeframe": _ALPACA_TF[tf], "start": start, "end": end, "limit": 10000,
             "feed": self.feed, "adjustment": self.adjustment,
@@ -127,7 +121,7 @@ class MassiveProvider:
 
     def get_bars(self, symbol: str, tf: str, start: str, end: str) -> pd.DataFrame:
         mult, span = _MASSIVE_TF[tf]
-        key = _env("MASSIVE_API_KEY")
+        key = secrets.get("massive_key")
         url = (f"{self.base}/{urllib.parse.quote(symbol)}/range/{mult}/{span}/{start[:10]}/{end[:10]}"
                f"?adjusted=true&sort=asc&limit=50000&apiKey={key}")
         rows = []
@@ -150,14 +144,12 @@ _OANDA_TF = {"M1": "M1", "M5": "M5", "M15": "M15", "M30": "M30", "H1": "H1", "H4
 
 
 class OandaProvider:
-    """Oanda v20 mid candles. Daily candles align to 17:00 New York."""
+    """Oanda v20 mid candles from the practice host only. Daily candles align to 17:00 New York."""
 
-    def __init__(self):
-        env = os.environ.get("OANDA_ENV", "practice")
-        self.base = "https://api-fxpractice.oanda.com" if env == "practice" else "https://api-fxtrade.oanda.com"
+    base = "https://api-fxpractice.oanda.com"
 
     def get_bars(self, symbol: str, tf: str, start: str, end: str) -> pd.DataFrame:
-        headers = {"Authorization": f"Bearer {_env('OANDA_API_TOKEN')}"}
+        headers = {"Authorization": f"Bearer {secrets.get('oanda_token')}"}
         rows = []
         cursor = pd.Timestamp(start, tz="UTC")
         stop = pd.Timestamp(end, tz="UTC")
