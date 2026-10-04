@@ -23,6 +23,7 @@ environment variables on the machine that runs them.
 | `tradex/scout` | Daily market scout (10 to 20 stocks): working technical source, interfaces for news, chatter and a Claude headline reviewer, and replay of the scout in backtests |
 | `tradex/pipeline.py` | Morning plan (scout, regime, allocation, universes) and the position-review pass, for thread 3 to schedule |
 | `tradex/core` | The spine: record types, the hash-chained SQLite ledger, Clock / MarketData / Broker interfaces with replay versions, the trading core loop, the counterfactual ledger and the replay harness |
+| `tradex/runtime` | Around the core: bar store (live appends, higher timeframes resampled only once closed), FX rate sources that refuse to guess in paper/live, incremental signals |
 | `tradex/decision` | Ensemble: family votes become one finalised trade plan (entry, stop, targets, time stop) before any risk review |
 | `tradex/events.py` | Event calendar (central banks, CPI, NFP, earnings, forex weekend) with blackout windows |
 | `tradex/execution` | Simulated broker (next-open fills, brackets, idempotent order IDs, read-only external holdings), pre-trade short and sanity checks, and the order guard every venue adapter submits through (verdict ID, size within verdict, agent-owned account from `config/accounts.yaml`). Protected |
@@ -79,6 +80,16 @@ Every bar, in order:
 
 Every step writes to the ledger with a decision ID (`YYYY-MM-DD-NNNN`). Blocked plans are
 followed to their would-be exit so each filter's cost is measurable.
+
+The core runs on bar closes: `TradingCore.on_bar_close(tf, ts)` handles every bar of one
+timeframe that closed at `ts`. Replay drives it from recorded bars; paper and live drive
+it from the bar-close scheduler with the same code, so a replayed day must reproduce the
+live ledger. Brokers are injected per book: the ensemble book gets the venue adapter
+(behind the order guard), and virtual books stay simulated on the same live bars.
+Signals are recomputed at each close on a rolling window of at least three lookbacks
+(recursive indicators count 5 or 10 periods), which a test shows gives the same signals as
+the full history on every seed. In paper and live a missing mark or FX rate blocks the
+trade and writes a Health row; nothing is estimated.
 
 ```bash
 python -m tradex replay --data data/cache/oanda --tf H4 --ledger runs/h4.sqlite --check-parity
