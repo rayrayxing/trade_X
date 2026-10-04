@@ -1,0 +1,1686 @@
+# Technical analysis and candlestick catalog for trade_X
+#
+# Read by the strategy designer as its menu of ideas and its prior beliefs.
+# Every entry describes a method in our own words from public descriptions;
+# nothing is copied from the cited books. Sources are listed so a claim can be checked.
+#
+# Inheritance: an entry that leaves out weaknesses, evidence, stocks or forex
+# takes the value from its family in `families`.
+schema_version: 1
+as_of: "2026-10-04"
+
+grades:
+  A: Replicated in peer-reviewed work across markets and periods, survives costs in at least some tests.
+  B: Peer-reviewed support but mixed, market-specific, decaying since publication, or information without proven net profit.
+  C: Practitioner statistics or published backtests only; plausible mechanism; no rigorous independent test we know of.
+  D: No systematic evidence, not falsifiable as usually stated, or tested and found wanting.
+
+code_status:
+  now: Expressible today with the repo's registry (talib.* in TA-Lib 0.8.1, or an in-house pattern.*/stat.* function).
+  small: Needs a new causal registry function on OHLCV bars only; a few dozen lines plus the look-ahead test.
+  needs_data: Needs data the repo does not ingest yet (calendars, rates, breadth, VIX, positioning, tick data).
+  approximate: Usually applied by eye; only a rule-based approximation can be coded, and it will differ from what practitioners mean.
+
+# Checked 2026-10-04: every TA-Lib 0.8.1 function was recomputed on truncated data and
+# matched the full-history values, so none looks ahead. FRACTAL marks the bar on which a
+# fractal is confirmed, not the fractal bar itself. VWAP is cumulative from the first bar,
+# not reset each session; a session VWAP needs its own function.
+
+sources:
+  NISON1991: Nison, S. (1991; 2nd ed. 2001). Japanese Candlestick Charting Techniques. New York Institute of Finance.
+  NISON1994: Nison, S. (1994). Beyond Candlesticks. Wiley.
+  BULK_CDL: Bulkowski, T.N. (2008). Encyclopedia of Candlestick Charts. Wiley.
+  BULK_CP: Bulkowski, T.N. (2005; 3rd ed. 2021). Encyclopedia of Chart Patterns. Wiley.
+  MYR2006: Marshall, B.R., Young, M.R., Rose, L.C. (2006). Candlestick technical trading strategies - can they create value for investors? Journal of Banking and Finance 30(8), 2303-2323.
+  MYC2008: Marshall, B.R., Young, M.R., Cahan, R. (2008). Are candlestick technical trading strategies profitable in the Japanese equity market? Review of Quantitative Finance and Accounting 31(2), 191-207.
+  CL1998: Caginalp, G., Laurent, H. (1998). The predictive power of price patterns. Applied Mathematical Finance 5(3-4), 181-205.
+  LSL2012: Lu, T.-H., Shiu, Y.-M., Liu, T.-C. (2012). Profitable candlestick trading strategies - the evidence from a new perspective. Review of Financial Economics 21(2), 63-68.
+  LMW2000: Lo, A.W., Mamaysky, H., Wang, J. (2000). Foundations of Technical Analysis. Journal of Finance 55(4), 1705-1765.
+  BLL1992: Brock, W., Lakonishok, J., LeBaron, B. (1992). Simple Technical Trading Rules and the Stochastic Properties of Stock Returns. Journal of Finance 47(5), 1731-1764.
+  STW1999: Sullivan, R., Timmermann, A., White, H. (1999). Data-Snooping, Technical Trading Rule Performance, and the Bootstrap. Journal of Finance 54(5), 1647-1691.
+  PI2007: Park, C.-H., Irwin, S.H. (2007). What Do We Know About the Profitability of Technical Analysis? Journal of Economic Surveys 21(4), 786-826.
+  EM1948: Edwards, R.D., Magee, J. (1948; later editions). Technical Analysis of Stock Trends.
+  MURPHY1999: Murphy, J.J. (1999). Technical Analysis of the Financial Markets. New York Institute of Finance.
+  MURPHY1991: Murphy, J.J. (1991). Intermarket Technical Analysis. Wiley.
+  KAUFMAN2019: Kaufman, P.J. (2019). Trading Systems and Methods, 6th ed. Wiley.
+  WILDER1978: Wilder, J.W. (1978). New Concepts in Technical Trading Systems. Trend Research.
+  APPEL2005: Appel, G. (2005). Technical Analysis - Power Tools for Active Investors. FT Prentice Hall.
+  BOLL2001: Bollinger, J. (2001). Bollinger on Bollinger Bands. McGraw-Hill.
+  EHLERS2001: Ehlers, J.F. (2001). Rocket Science for Traders. Wiley.
+  CHANDE1994: Chande, T.S., Kroll, S. (1994). The New Technical Trader. Wiley.
+  ELDER1993: Elder, A. (1993). Trading for a Living. Wiley.
+  ELDER2002: Elder, A. (2002). Come Into My Trading Room. Wiley.
+  CONNORS2008: Connors, L., Alvarez, C. (2008). Short Term Trading Strategies That Work. TradingMarkets.
+  CR1995: Connors, L., Raschke, L.B. (1995). Street Smarts. M. Gordon Publishing.
+  CRABEL1990: Crabel, T. (1990). Day Trading with Short Term Price Patterns and Opening Range Breakout. Traders Press.
+  CARTER2012: Carter, J.F. (2012). Mastering the Trade, 2nd ed. McGraw-Hill.
+  FAITH2007: Faith, C. (2007). Way of the Turtle. McGraw-Hill.
+  ONEIL1988: O'Neil, W.J. (1988; later editions). How to Make Money in Stocks. McGraw-Hill.
+  MINERVINI2013: Minervini, M. (2013). Trade Like a Stock Market Wizard. McGraw-Hill.
+  WEINSTEIN1988: Weinstein, S. (1988). Secrets for Profiting in Bull and Bear Markets. McGraw-Hill.
+  DARVAS1960: Darvas, N. (1960). How I Made $2,000,000 in the Stock Market.
+  FP1978: Frost, A.J., Prechter, R.R. (1978). Elliott Wave Principle. New Classics Library.
+  PRUDEN2007: Pruden, H.O. (2007). The Three Skills of Top Trading. Wiley.
+  HAMILTON1922: Hamilton, W.P. (1922). The Stock Market Barometer.
+  BGK1998: Brown, S.J., Goetzmann, W.N., Kumar, A. (1998). The Dow Theory - William Peter Hamilton's Track Record Reconsidered. Journal of Finance 53(4), 1311-1333.
+  SK1986: Steidlmayer, J.P., Koy, K. (1986). Markets and Market Logic. Porcupine Press.
+  DJD1990: Dalton, J.F., Jones, E.T., Dalton, R.B. (1990). Mind Over Markets. Probus.
+  PERL2008: Perl, J. (2008). DeMark Indicators. Bloomberg Press.
+  GARTLEY1935: Gartley, H.M. (1935). Profits in the Stock Market.
+  CARNEY2010: Carney, S.M. (2010). Harmonic Trading, Volume One. FT Press.
+  PATEL2010: Patel, M. (2010). Trading with Ichimoku Clouds. Wiley.
+  WILLIAMS1995: Williams, B. (1995). Trading Chaos. Wiley.
+  BROOKS2012: Brooks, A. (2012). Trading Price Action (Trends, Trading Ranges, Reversals). Wiley.
+  SPERANDEO1991: Sperandeo, V. (1991). Trader Vic - Methods of a Wall Street Master. Wiley.
+  DORSEY2007: Dorsey, T.J. (2007). Point and Figure Charting, 3rd ed. Wiley.
+  VALCU2004: Valcu, D. (2004). Using the Heikin-Ashi Technique. Technical Analysis of Stocks and Commodities 22(2).
+  BS2010: Botes, E., Siepman, D. (2010). The Vortex Indicator. Technical Analysis of Stocks and Commodities 28(1).
+  PETERS1994: Peters, E.E. (1994). Fractal Market Analysis. Wiley.
+  OSLER2000: Osler, C.L. (2000). Support for Resistance - Technical Analysis and Intraday Exchange Rates. FRBNY Economic Policy Review 6(2), 53-68.
+  OSLER2003: Osler, C.L. (2003). Currency Orders and Exchange Rate Dynamics - An Explanation for the Predictive Success of Technical Analysis. Journal of Finance 58(5), 1791-1819.
+  MOP2012: Moskowitz, T.J., Ooi, Y.H., Pedersen, L.H. (2012). Time Series Momentum. Journal of Financial Economics 104(2), 228-250.
+  HOP2017: Hurst, B., Ooi, Y.H., Pedersen, L.H. (2017). A Century of Evidence on Trend-Following Investing. Journal of Portfolio Management 44(1), 15-29.
+  FABER2007: Faber, M.T. (2007). A Quantitative Approach to Tactical Asset Allocation. Journal of Wealth Management 9(4), 69-79.
+  JT1993: Jegadeesh, N., Titman, S. (1993). Returns to Buying Winners and Selling Losers. Journal of Finance 48(1), 65-91.
+  J1990: Jegadeesh, N. (1990). Evidence of Predictable Behavior of Security Returns. Journal of Finance 45(3), 881-898.
+  GH2004: George, T.J., Hwang, C.-Y. (2004). The 52-Week High and Momentum Investing. Journal of Finance 59(5), 2145-2176.
+  LEVY1967: Levy, R.A. (1967). Relative Strength as a Criterion for Investment Selection. Journal of Finance 22(4), 595-610.
+  GGR2006: Gatev, E., Goetzmann, W.N., Rouwenhorst, K.G. (2006). Pairs Trading - Performance of a Relative-Value Arbitrage Rule. Review of Financial Studies 19(3), 797-827.
+  MM2017: Moreira, A., Muir, T. (2017). Volatility-Managed Portfolios. Journal of Finance 72(4), 1611-1644.
+  GHLZ2018: Gao, L., Han, Y., Li, S.Z., Zhou, G. (2018). Market Intraday Momentum. Journal of Financial Economics 129(2), 394-414.
+  LPS2019: Lou, D., Polk, C., Skouras, S. (2019). A Tug of War - Overnight versus Intraday Expected Returns. Journal of Financial Economics 134(1), 192-213.
+  LM2015: Lucca, D.O., Moench, E. (2015). The Pre-FOMC Announcement Drift. Journal of Finance 70(1), 329-371.
+  BT1989: Bernard, V.L., Thomas, J.K. (1989). Post-Earnings-Announcement Drift - Delayed Price Response or Risk Premium? Journal of Accounting Research 27, 1-36.
+  GKM2001: Gervais, S., Kaniel, R., Mingelgrin, D.H. (2001). The High-Volume Return Premium. Journal of Finance 56(3), 877-919.
+  LS2000: Lee, C.M.C., Swaminathan, B. (2000). Price Momentum and Trading Volume. Journal of Finance 55(5), 2017-2069.
+  BEO1994: Blume, L., Easley, D., O'Hara, M. (1994). Market Statistics and Technical Analysis - The Role of Volume. Journal of Finance 49(1), 153-181.
+  LS1988: Lakonishok, J., Smidt, S. (1988). Are Seasonal Anomalies Real? A Ninety-Year Perspective. Review of Financial Studies 1(4), 403-425.
+  WHALEY2000: Whaley, R.E. (2000). The Investor Fear Gauge. Journal of Portfolio Management 26(3), 12-17.
+  HAMILTON1989: Hamilton, J.D. (1989). A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle. Econometrica 57(2), 357-384.
+  LO2004: Lo, A.W. (2004). The Adaptive Markets Hypothesis. Journal of Portfolio Management 30(5), 15-29.
+  MSSS2012C: Menkhoff, L., Sarno, L., Schmeling, M., Schrimpf, A. (2012). Carry Trades and Global Foreign Exchange Volatility. Journal of Finance 67(2), 681-718.
+  MSSS2012M: Menkhoff, L., Sarno, L., Schmeling, M., Schrimpf, A. (2012). Currency Momentum Strategies. Journal of Financial Economics 106(3), 660-684.
+  LRV2011: Lustig, H., Roussanov, N., Verdelhan, A. (2011). Common Risk Factors in Currency Markets. Review of Financial Studies 24(11), 3731-3777.
+  BNP2008: Brunnermeier, M.K., Nagel, S., Pedersen, L.H. (2008). Carry Trades and Currency Crashes. NBER Macroeconomics Annual 23, 313-347.
+  AMP2013: Asness, C.S., Moskowitz, T.J., Pedersen, L.H. (2013). Value and Momentum Everywhere. Journal of Finance 68(3), 929-985.
+  NWD1997: Neely, C., Weller, P., Dittmar, R. (1997). Is Technical Analysis in the Foreign Exchange Market Profitable? A Genetic Programming Approach. Journal of Financial and Quantitative Analysis 32(4), 405-426.
+  NWU2009: Neely, C.J., Weller, P.A., Ulrich, J.M. (2009). The Adaptive Markets Hypothesis - Evidence from the Foreign Exchange Market. Journal of Financial and Quantitative Analysis 44(2), 467-488.
+  IH2006: Ito, T., Hashimoto, Y. (2006). Intraday Seasonality in Activities of the Foreign Exchange Markets. Journal of the Japanese and International Economies 20(4), 637-664.
+  KMW2024: Krohn, I., Mueller, P., Whelan, P. (2024). Foreign Exchange Fixings and Returns Around the Clock. Journal of Finance 79(1), 541-578.
+  IY2017: Ito, T., Yamada, M. (2017). Puzzles in the Tokyo Fixing in the Forex Market - Order Imbalances and Biased Pricing by Banks. Journal of International Money and Finance 77, 64-84.
+  EL2002: Evans, M.D.D., Lyons, R.K. (2002). Order Flow and Exchange Rate Dynamics. Journal of Political Economy 110(1), 170-180.
+  BLDP2014: Bailey, D.H., Lopez de Prado, M. (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management 40(5), 94-107.
+  HLZ2016: Harvey, C.R., Liu, Y., Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies 29(1), 5-68.
+  ZBA2024: Zarattini, C., Barbon, A., Aziz, A. (2024). A Profitable Day Trading Strategy for the U.S. Equity Market. SSRN working paper (not peer reviewed).
+  GRANVILLE1963: Granville, J.E. (1963). Granville's New Key to Stock Market Profits. Prentice-Hall.
+  KELTNER1960: Keltner, C.W. (1960). How to Make Money in Commodities. The Keltner Statistical Service.
+  SHANNON2023: Shannon, B. (2023). Maximum Trading Gains with Anchored VWAP. Wiley.
+  OANDA_V20: OANDA v20 REST API documentation, instrument financing fields (developer.oanda.com).
+  CFTC_COT: U.S. CFTC Commitments of Traders reports (cftc.gov).
+  MOF_JP: Japan Ministry of Finance, foreign exchange intervention operations data (mof.go.jp).
+  FRED: Federal Reserve Bank of St. Louis FRED data (fred.stlouisfed.org).
+
+families:
+  candle.concept:
+    label: Japanese candlestick method (Nison) - how patterns are read
+    weaknesses: Concepts, not signals; they decide whether a pattern counts.
+    evidence: {grade: C, kind: practitioner, sources: [NISON1991, NISON1994]}
+    stocks: Applies as written; daily bars align with the exchange session.
+    forex: Applies, but the daily candle depends on the chosen close (use 17:00 New York, Oanda's daily boundary).
+  candle.single:
+    label: Single-candle patterns
+    weaknesses: >-
+      Fire often and mean little alone. Academic tests of raw patterns on US and Japanese
+      stocks found no value after costs (MYR2006, MYC2008); some studies find value in
+      specific markets or with trend filters (CL1998, LSL2012). Meaning depends on trend,
+      location and confirmation, which TA-Lib does not check (its only context is a short
+      body-size average).
+    evidence: {grade: C, kind: mixed, sources: [NISON1991, BULK_CDL, MYR2006, MYC2008, CL1998, LSL2012]}
+    stocks: Daily bars on liquid names; skip names with thin pre-market where opens are noisy.
+    forex: Forex rarely gaps except over the weekend, so open is near the prior close; shapes still form. Use H4 or D1 with a 17:00 New York close.
+  candle.double:
+    label: Two-candle patterns
+    weaknesses: >-
+      Same as single candles, plus TA-Lib's definitions are strict in some places and loose
+      in others compared with Nison's descriptions. Patterns that need a gap (window) almost
+      never form in forex.
+    evidence: {grade: C, kind: mixed, sources: [NISON1991, BULK_CDL, MYR2006, LSL2012]}
+    stocks: Applies as written.
+    forex: Gap-dependent ones rarely occur; body-based ones (engulfing, harami, piercing) occur normally.
+  candle.triple:
+    label: Three-or-more-candle patterns
+    weaknesses: >-
+      Rare, so samples are small and backtests on one market produce few trades. Star and
+      abandoned-baby patterns need gaps that forex seldom shows. CL1998 found some three-day
+      reversal patterns predictive in S&P 500 stocks over a short sample.
+    evidence: {grade: C, kind: mixed, sources: [NISON1991, BULK_CDL, CL1998, MYR2006]}
+    stocks: Applies; pool across the universe to get enough events.
+    forex: Gap versions rarely form; relax the gap rule to body gaps or skip.
+  candle.alt_chart:
+    label: Alternative Japanese and price-only charts
+    weaknesses: Transform price and discard time or volume; backtests must fill at real prices, not the synthetic chart's.
+    evidence: {grade: C, kind: practitioner, sources: [NISON1994, DORSEY2007]}
+    stocks: Applies.
+    forex: Applies; brick and box sizes in ATR units keep pairs comparable.
+  chart.reversal:
+    label: Classical reversal chart patterns
+    weaknesses: >-
+      Pattern definitions are loose, so results depend on the detector. Hindsight makes them
+      look reliable on charts; only the confirmation bar is tradable. LMW2000 found several
+      patterns change the distribution of later returns (information, not proven net profit).
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP, EM1948]}
+    stocks: Daily or weekly bars; volume confirmation available.
+    forex: Applies; use tick volume only as a weak proxy.
+  chart.continuation:
+    label: Classical continuation chart patterns
+    weaknesses: Same detector dependence as reversals; many breakouts fail, and failures cluster in ranges.
+    evidence: {grade: C, kind: mixed, sources: [LMW2000, BULK_CP, EM1948]}
+    stocks: Applies; strongest claims are for growth stocks in rising markets (practitioner).
+    forex: Applies on H4 and D1.
+  chart.bar:
+    label: Short-term bar and price-action setups
+    weaknesses: Very frequent and noisy; edge per trade is small, so costs decide the result.
+    evidence: {grade: C, kind: practitioner, sources: [CRABEL1990, CR1995, BROOKS2012]}
+    stocks: Costs per trade (US$0.99 platform fee) matter at small size; prefer daily bars.
+    forex: Suits H1 and H4; spreads are the main cost.
+  trend:
+    label: Trend-following indicators
+    weaknesses: Lag; lose money in ranges through repeated whipsaw; profits come from a few large moves.
+    evidence: {grade: B, kind: academic, sources: [BLL1992, STW1999, PI2007, HOP2017, NWD1997, NWU2009]}
+    stocks: Works best on indices and sectors; single stocks gap and jump on news.
+    forex: Long history of trend rules in forex (NWD1997), with profits shrinking over time (NWU2009).
+  momentum:
+    label: Oscillators and momentum indicators
+    weaknesses: >-
+      Overbought and oversold readings persist in trends, so mean-reversion use needs a
+      regime filter. Most oscillators are transforms of the same price changes and are
+      highly correlated with each other.
+    evidence: {grade: C, kind: practitioner, sources: [WILDER1978, MURPHY1999, KAUFMAN2019]}
+    stocks: Short-horizon reversal in liquid indices is the best-supported use.
+    forex: Range regimes in major pairs; avoid around data releases.
+  volatility:
+    label: Volatility measures and bands
+    weaknesses: Describe how much price moves, not which way; useful for sizing, stops and regime more than for direction.
+    evidence: {grade: B, kind: mixed, sources: [MM2017, BOLL2001, KAUFMAN2019]}
+    stocks: Applies.
+    forex: Applies; volatility is strongly seasonal by session.
+  volume:
+    label: Volume and money-flow indicators
+    weaknesses: >-
+      Need true consolidated volume. The free Alpaca IEX feed is a slice of US volume, so
+      absolute levels are wrong; only relative measures (versus the feed's own average)
+      are usable. Forex has no central volume; broker tick counts are a weak proxy.
+    evidence: {grade: B, kind: mixed, sources: [BEO1994, LS2000, GKM2001, GRANVILLE1963]}
+    stocks: Relative volume works on IEX; cumulative indicators (OBV, A/D) drift with feed coverage.
+    forex: Tick volume only; treat results as unproven.
+  profile:
+    label: Volume-at-price and auction tools
+    weaknesses: Need intraday bars with volume; value areas are approximations from bars, not trades.
+    evidence: {grade: C, kind: practitioner, sources: [SK1986, DJD1990]}
+    stocks: Applies with intraday IEX bars (relative shape only).
+    forex: Time-at-price profile works without volume; volume-at-price does not.
+  levels:
+    label: Support, resistance and pivot levels
+    weaknesses: Many levels exist at any time, so price is always near one; a level is useful only with a defined reaction rule.
+    evidence: {grade: B, kind: mixed, sources: [OSLER2000, OSLER2003, MURPHY1999]}
+    stocks: Applies; prior day and week highs and lows are widely watched.
+    forex: Best academic support for levels is in forex (round numbers, order clustering).
+  fib_harmonic:
+    label: Fibonacci and harmonic patterns
+    weaknesses: >-
+      No peer-reviewed evidence that Fibonacci ratios matter more than other ratios; many
+      ratios and tolerances make it easy to find a fit after the fact. Any effect may come
+      from many traders watching the same levels.
+    evidence: {grade: D, kind: practitioner, sources: [CARNEY2010, GARTLEY1935, MURPHY1999]}
+    stocks: Applies mechanically; treat as a level generator to be tested.
+    forex: Popular in forex retail trading; same caution.
+  framework:
+    label: Whole-market frameworks and named methods
+    weaknesses: Mostly discretionary; coded versions are approximations and may not represent the method.
+    evidence: {grade: C, kind: practitioner, sources: [MURPHY1999]}
+    stocks: See entry.
+    forex: See entry.
+  ichimoku:
+    label: Ichimoku Kinko Hyo components
+    weaknesses: Fixed default periods (9, 26, 52) come from a six-day trading week; lagging, trend-only; few rigorous tests.
+    evidence: {grade: C, kind: practitioner, sources: [PATEL2010, NISON1994]}
+    stocks: Applies on daily bars.
+    forex: Very popular in yen pairs; applies on H4 and D1.
+  regime:
+    label: Regime and multi-timeframe methods
+    weaknesses: Regime labels lag and switch at the worst times; label count multiplies trials.
+    evidence: {grade: B, kind: mixed, sources: [HAMILTON1989, LO2004, ELDER1993]}
+    stocks: Index regime (SPY) governs single stocks.
+    forex: Per-pair regime plus a global risk-on/off regime.
+  quant:
+    label: Statistical price anomalies (systematic, not chart-reading)
+    weaknesses: Published anomalies decay after publication and many are false discoveries (HLZ2016); costs matter.
+    evidence: {grade: B, kind: academic, sources: [HLZ2016, BLDP2014]}
+    stocks: See entry.
+    forex: See entry.
+  forex:
+    label: Forex-specific methods
+    weaknesses: See entry.
+    evidence: {grade: B, kind: academic, sources: [LRV2011]}
+    stocks: Not applicable unless stated.
+    forex: See entry.
+  exit:
+    label: Exit and trade-management techniques
+    weaknesses: Exits change the return shape more than entries; tuning them is a big source of overfitting.
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019, ELDER2002]}
+    stocks: Applies; gaps jump stops.
+    forex: Applies; weekend gaps jump stops.
+
+entries:
+
+  # ---------------------------------------------------------------- candlestick concepts
+  - id: cdl.ctx.prior_trend
+    name: Prior trend requirement
+    family: candle.concept
+    definition: A reversal pattern only means something if there is a trend to reverse. A hammer after a rally is not a hammer; the same shape after a decline is.
+    inputs: OHLC plus a trend measure (slope of an EMA, position versus EMA, or the last confirmed swing direction)
+    signal: Gate. A bullish reversal pattern counts only after a measured decline, a bearish one only after a measured rally.
+    code: {status: small, ref: [proposed pattern.candle_in_context], note: "trend measured over N bars before the pattern's first bar, never including it"}
+  - id: cdl.ctx.location
+    name: Location at support or resistance
+    family: candle.concept
+    definition: A pattern at a level the market already respects (prior swing, moving average, round number, window) is weighted more than one in open space.
+    inputs: Pattern output plus a level series
+    signal: Gate or weight. The repo's pattern.candle_score already supports this through at_level.
+    code: {status: now, ref: [pattern.candle_score, pattern.zone_touch]}
+  - id: cdl.ctx.confirmation
+    name: Next-bar confirmation
+    family: candle.concept
+    definition: Wait for the following candle to close beyond the pattern (above the high or mid-body of a bullish signal, below for bearish) before acting.
+    inputs: Pattern output shifted one bar, close
+    signal: Entry on the confirming bar's close, filled at the next open. Costs part of the move but filters many false signals.
+    code: {status: now, ref: [rule expression], note: "e.g. shift(engulf, 1) > 0 and close > shift(high, 1)"}
+  - id: cdl.ctx.convergence
+    name: Convergence of signals
+    family: candle.concept
+    definition: Several independent signals at the same price area (a candle pattern, an oversold oscillator, a moving average and a prior low) make a stronger case than any one.
+    inputs: Several features
+    signal: Count of agreeing signals above a threshold. Matches the architecture's rule that entries need two or more families agreeing.
+    code: {status: now, ref: [rule expression combining features]}
+  - id: cdl.ctx.relative_size
+    name: Candle size relative to recent candles
+    family: candle.concept
+    definition: A long body or shadow is long only compared with recent candles; size in ATR units makes this comparable across symbols.
+    inputs: OHLC, ATR
+    signal: Filter, e.g. body greater than 1 ATR for engulfing bodies, lower shadow at least twice the body for hammers.
+    code: {status: small, ref: [proposed stat.body_atr, stat.shadow_ratio]}
+  - id: cdl.ctx.window
+    name: Windows (gaps) as support and resistance
+    family: candle.concept
+    definition: A rising window (gap up) tends to act as support on pullbacks and a falling window as resistance; a closed window cancels the signal.
+    inputs: OHLC
+    signal: Long on a pullback that holds a rising window; exit if the window is closed.
+    forex: Weekend gaps only; mostly not usable.
+    code: {status: small, ref: [proposed pattern.open_windows]}
+  - id: cdl.ctx.change_of_trend
+    name: Reversal means change of trend, not opposite trend
+    family: candle.concept
+    definition: Nison stresses that a reversal pattern often ends the prior trend in a sideways phase rather than starting a new trend the other way.
+    inputs: Pattern output
+    signal: Use reversal patterns to exit or tighten stops on existing positions more than to open opposite positions; size accordingly.
+    code: {status: now, ref: [exit.long_when / exit.short_when rules]}
+  - id: cdl.ctx.western_overlay
+    name: Candles combined with Western tools
+    family: candle.concept
+    definition: Use candlesticks to time entries at levels found by Western tools (trendlines, retracements, moving averages, oscillators).
+    inputs: Pattern output plus Western features
+    signal: Entry when a candle signal appears at a Western level in the direction of the higher-timeframe trend.
+    code: {status: now, ref: [pattern.candle_score with at_level]}
+  - id: cdl.ctx.sakata
+    name: Sakata's five methods (san-zan, san-sen, san-ku, san-pei, san-poh)
+    family: candle.concept
+    definition: >-
+      A traditional grouping: triple tops and bottoms (three mountains or rivers), three
+      white soldiers or black crows, three gaps, parallel lines, and three methods (rests
+      within a trend). It shows the Japanese grouping of chart and candle ideas.
+    inputs: OHLC and swing pivots
+    signal: See the individual pattern entries.
+    code: {status: small, ref: [see chart.triple_top_bottom, cdl.three_soldiers_crows, cdl.three_methods]}
+  - id: cdl.ctx.tower_frypan
+    name: Tower tops and bottoms, fry-pan bottoms, dumpling tops
+    family: candle.concept
+    definition: Slower reversal shapes made of candles - a tall candle, a stall, then a tall opposite candle (tower); or a rounded base or top with a gap out of it (fry-pan, dumpling).
+    inputs: OHLC
+    signal: Breakout from the rounded shape in the new direction.
+    code: {status: approximate, ref: [proposed pattern.rounding]}
+
+  # ---------------------------------------------------------------- single candles
+  - id: cdl.doji
+    name: Doji (standard, long-legged, dragonfly, gravestone, rickshaw man)
+    family: candle.single
+    definition: Open and close almost equal - indecision. Dragonfly has a long lower shadow, gravestone a long upper shadow, long-legged long shadows both ways.
+    inputs: OHLC
+    signal: After an extended move, a warning that the trend may stall; Nison treats a doji after a long white candle in an uptrend as more meaningful than after a decline.
+    code: {status: now, ref: [talib.CDLDOJI, talib.CDLLONGLEGGEDDOJI, talib.CDLDRAGONFLYDOJI, talib.CDLGRAVESTONEDOJI, talib.CDLRICKSHAWMAN]}
+  - id: cdl.hammer_hanging_man
+    name: Hammer and hanging man
+    family: candle.single
+    definition: Small body near the top of the range with a lower shadow at least twice the body. Called a hammer after a decline (bullish) and a hanging man after a rally (bearish, needs confirmation).
+    inputs: OHLC
+    signal: Hammer - long after next-bar confirmation; hanging man - exit or short after a lower close.
+    code: {status: now, ref: [talib.CDLHAMMER, talib.CDLHANGINGMAN, talib.CDLTAKURI]}
+  - id: cdl.inverted_hammer_shooting_star
+    name: Inverted hammer and shooting star
+    family: candle.single
+    definition: Small body near the bottom of the range with a long upper shadow. Shooting star after a rally (bearish), inverted hammer after a decline (bullish, needs confirmation).
+    inputs: OHLC
+    signal: Shooting star - short or exit below its low; inverted hammer - long after a higher close.
+    code: {status: now, ref: [talib.CDLSHOOTINGSTAR, talib.CDLINVERTEDHAMMER]}
+  - id: cdl.marubozu
+    name: Marubozu (shaven candle)
+    family: candle.single
+    definition: A long body with little or no shadow at one or both ends - strong one-sided control of the session.
+    inputs: OHLC
+    signal: Continuation in the body's direction, or a breakout confirmation when it closes through a level.
+    code: {status: now, ref: [talib.CDLMARUBOZU, talib.CDLCLOSINGMARUBOZU, talib.CDLLONGLINE]}
+  - id: cdl.spinning_top_high_wave
+    name: Spinning top and high-wave candle
+    family: candle.single
+    definition: Small body with shadows on both sides (high-wave if the shadows are very long) - indecision.
+    inputs: OHLC
+    signal: Loss of momentum after a trend; mostly a filter (do not enter a trend trade on it).
+    code: {status: now, ref: [talib.CDLSPINNINGTOP, talib.CDLHIGHWAVE, talib.CDLSHORTLINE]}
+  - id: cdl.belt_hold
+    name: Belt hold
+    family: candle.single
+    definition: A long candle that opens at its extreme (bullish opens on its low) against the prior trend.
+    inputs: OHLC
+    signal: Reversal candidate if it appears at a level after a trend.
+    forex: Rare in forex because the open sits near the prior close.
+    code: {status: now, ref: [talib.CDLBELTHOLD]}
+
+  # ---------------------------------------------------------------- two candles
+  - id: cdl.engulfing
+    name: Bullish and bearish engulfing
+    family: candle.double
+    definition: A candle whose real body fully covers the prior candle's body in the opposite colour, after a trend.
+    inputs: OHLC
+    signal: Reversal candidate; stronger with a larger second body, at a level, and with higher volume. Used in seed fx-trend-pullback-engulfing.
+    code: {status: now, ref: [talib.CDLENGULFING]}
+  - id: cdl.harami
+    name: Harami and harami cross
+    family: candle.double
+    definition: A small body (a doji for the cross) inside the prior long body - the trend loses force.
+    inputs: OHLC
+    signal: Exit or tighten stops on the existing trend; a reversal entry only with confirmation.
+    code: {status: now, ref: [talib.CDLHARAMI, talib.CDLHARAMICROSS]}
+  - id: cdl.piercing_dark_cloud
+    name: Piercing line and dark-cloud cover
+    family: candle.double
+    definition: After a long candle in the trend, the next opens beyond it and closes more than halfway into its body.
+    inputs: OHLC
+    signal: Reversal candidate; Nison describes the deeper the penetration the stronger the signal.
+    forex: The open beyond the prior close rarely happens; TA-Lib will seldom fire.
+    code: {status: now, ref: [talib.CDLPIERCING, talib.CDLDARKCLOUDCOVER]}
+  - id: cdl.tweezers
+    name: Tweezer tops and bottoms
+    family: candle.double
+    definition: Two or more candles with matching highs (top) or lows (bottom) at the end of a move - a short-term level held twice.
+    inputs: OHLC
+    signal: Reversal candidate, stronger when the two candles also form another pattern (e.g. harami).
+    code: {status: small, ref: [proposed pattern.tweezers], note: "not in TA-Lib; talib.CDLMATCHINGLOW covers one bullish close-based variant"}
+  - id: cdl.kicking
+    name: Kicking
+    family: candle.double
+    definition: A marubozu followed by an opposite marubozu that gaps away from it - a sharp change of sentiment.
+    inputs: OHLC
+    signal: Strong signal in the second candle's direction.
+    forex: Needs a gap; almost never forms.
+    code: {status: now, ref: [talib.CDLKICKING, talib.CDLKICKINGBYLENGTH]}
+  - id: cdl.counterattack_meeting
+    name: Counterattack (meeting) lines
+    family: candle.double
+    definition: Two opposite-colour candles that close at the same price, the second after opening far away.
+    inputs: OHLC
+    signal: Weak reversal; needs confirmation.
+    code: {status: now, ref: [talib.CDLCOUNTERATTACK]}
+  - id: cdl.neck_lines
+    name: On-neck, in-neck and thrusting
+    family: candle.double
+    definition: In a downtrend, a white candle that closes only at, slightly into, or below the midpoint of the prior black body - buyers failed.
+    inputs: OHLC
+    signal: Bearish continuation.
+    code: {status: now, ref: [talib.CDLONNECK, talib.CDLINNECK, talib.CDLTHRUSTING]}
+  - id: cdl.separating_lines
+    name: Separating lines
+    family: candle.double
+    definition: Opposite-colour candles that open at the same price, the second in the trend direction.
+    inputs: OHLC
+    signal: Continuation.
+    code: {status: now, ref: [talib.CDLSEPARATINGLINES]}
+  - id: cdl.homing_pigeon_matching_low
+    name: Homing pigeon and matching low
+    family: candle.double
+    definition: In a downtrend, a second black candle inside the first (pigeon) or with the same close (matching low).
+    inputs: OHLC
+    signal: Bullish reversal candidate.
+    code: {status: now, ref: [talib.CDLHOMINGPIGEON, talib.CDLMATCHINGLOW]}
+  - id: cdl.doji_star
+    name: Doji star
+    family: candle.double
+    definition: A doji that gaps away from a long candle in the trend direction - often the first two candles of a morning or evening doji star.
+    inputs: OHLC
+    signal: Warning; act on the third candle.
+    code: {status: now, ref: [talib.CDLDOJISTAR]}
+
+  # ---------------------------------------------------------------- three or more candles
+  - id: cdl.morning_evening_star
+    name: Morning star and evening star (including doji stars)
+    family: candle.triple
+    definition: A long candle in the trend, a small-bodied star that gaps away, then a long opposite candle that closes well into the first body.
+    inputs: OHLC
+    signal: Reversal; the doji version is described as stronger.
+    code: {status: now, ref: [talib.CDLMORNINGSTAR, talib.CDLEVENINGSTAR, talib.CDLMORNINGDOJISTAR, talib.CDLEVENINGDOJISTAR]}
+  - id: cdl.abandoned_baby
+    name: Abandoned baby
+    family: candle.triple
+    definition: A star pattern whose middle doji gaps away from both neighbours, shadows included.
+    inputs: OHLC
+    signal: Rare, strong reversal.
+    code: {status: now, ref: [talib.CDLABANDONEDBABY]}
+  - id: cdl.three_soldiers_crows
+    name: Three white soldiers and three black crows (and identical crows)
+    family: candle.triple
+    definition: Three long candles in a row in one direction, each closing near its extreme and opening within the prior body.
+    inputs: OHLC
+    signal: Reversal from a low (soldiers) or high (crows); after a long move it can mark exhaustion.
+    code: {status: now, ref: [talib.CDL3WHITESOLDIERS, talib.CDL3BLACKCROWS, talib.CDLIDENTICAL3CROWS]}
+  - id: cdl.advance_block_stalled
+    name: Advance block and stalled (deliberation) pattern
+    family: candle.triple
+    definition: Three white candles whose bodies shrink or whose upper shadows grow - the rally tires.
+    inputs: OHLC
+    signal: Exit longs or tighten stops.
+    code: {status: now, ref: [talib.CDLADVANCEBLOCK, talib.CDLSTALLEDPATTERN]}
+  - id: cdl.three_inside_outside
+    name: Three inside and three outside up or down
+    family: candle.triple
+    definition: A harami (inside) or engulfing (outside) followed by a confirming third candle - the confirmed versions of those two-candle patterns.
+    inputs: OHLC
+    signal: Reversal with built-in confirmation.
+    code: {status: now, ref: [talib.CDL3INSIDE, talib.CDL3OUTSIDE]}
+  - id: cdl.three_methods
+    name: Rising and falling three methods, mat hold
+    family: candle.triple
+    definition: A long candle, three or so small counter-trend candles that stay within its range, then a long candle closing beyond it - a rest within the trend.
+    inputs: OHLC
+    signal: Continuation entry on the final candle.
+    code: {status: now, ref: [talib.CDLRISEFALL3METHODS, talib.CDLMATHOLD]}
+  - id: cdl.tasuki_gaps
+    name: Tasuki gaps, side-by-side white lines, gap three methods
+    family: candle.triple
+    definition: Gap continuation patterns in which a later candle moves into the gap but does not close it.
+    inputs: OHLC
+    signal: Continuation while the window holds.
+    forex: Need gaps; rarely form.
+    code: {status: now, ref: [talib.CDLTASUKIGAP, talib.CDLGAPSIDESIDEWHITE, talib.CDLXSIDEGAP3METHODS]}
+  - id: cdl.two_crows
+    name: Two crows and upside-gap two crows
+    family: candle.triple
+    definition: After a long white candle, two black candles that gap up and then fill back into the white body.
+    inputs: OHLC
+    signal: Bearish reversal candidate.
+    code: {status: now, ref: [talib.CDL2CROWS, talib.CDLUPSIDEGAP2CROWS]}
+  - id: cdl.three_line_strike
+    name: Three-line strike
+    family: candle.triple
+    definition: Three candles in the trend followed by one long candle that erases all three.
+    inputs: OHLC
+    signal: Traditionally continuation; practitioner statistics (BULK_CDL) report it often acts as a reversal, which shows how pattern meaning varies by source.
+    code: {status: now, ref: [talib.CDL3LINESTRIKE]}
+  - id: cdl.tri_star
+    name: Tri-star
+    family: candle.triple
+    definition: Three doji in a row with the middle one gapping - extreme indecision after a trend.
+    inputs: OHLC
+    signal: Rare reversal.
+    code: {status: now, ref: [talib.CDLTRISTAR]}
+  - id: cdl.rare_bottoms
+    name: Unique three river, three stars in the south, ladder bottom, concealing baby swallow, stick sandwich
+    family: candle.triple
+    definition: Rare multi-candle bottoming patterns with specific shadow and body rules.
+    inputs: OHLC
+    signal: Bullish reversal candidates; too rare to test alone, so only useful pooled into a candle vote.
+    code: {status: now, ref: [talib.CDLUNIQUE3RIVER, talib.CDL3STARSINSOUTH, talib.CDLLADDERBOTTOM, talib.CDLCONCEALBABYSWALL, talib.CDLSTICKSANDWICH]}
+  - id: cdl.breakaway
+    name: Breakaway
+    family: candle.triple
+    definition: Five candles - a gap in the trend direction, three small continuation candles, then a long reversal candle back into the gap.
+    inputs: OHLC
+    signal: Reversal candidate.
+    code: {status: now, ref: [talib.CDLBREAKAWAY]}
+  - id: cdl.hikkake
+    name: Hikkake (inside-bar false breakout)
+    family: candle.triple
+    definition: An inside bar, a breakout of it in one direction, then a reversal through the other side - traders caught on the false move.
+    inputs: OHLC
+    signal: Trade in the direction of the reversal; a Western-style trap pattern.
+    code: {status: now, ref: [talib.CDLHIKKAKE, talib.CDLHIKKAKEMOD]}
+  - id: cdl.vote
+    name: Candle vote (net of all detectors)
+    family: candle.triple
+    definition: Sum of bullish and bearish detector outputs over a chosen pattern set, optionally only near a level. The repo's composite.
+    inputs: OHLC, optional level
+    signal: Net vote above a threshold. Treat each pattern set as one trial in the ledger.
+    code: {status: now, ref: [pattern.candle_score]}
+
+  # ---------------------------------------------------------------- alternative charts
+  - id: alt.heikin_ashi
+    name: Heikin-Ashi candles
+    family: candle.alt_chart
+    definition: Smoothed candles built from averages of the current and prior bar - trends show as runs of one colour without lower (or upper) shadows.
+    inputs: OHLC
+    signal: Trend filter or trailing exit (exit on the first opposite-colour candle). Never fill at Heikin-Ashi prices.
+    evidence: {grade: C, kind: practitioner, sources: [VALCU2004]}
+    code: {status: small, ref: [proposed stat.heikin_ashi]}
+  - id: alt.renko
+    name: Renko bricks
+    family: candle.alt_chart
+    definition: New brick only when price moves a fixed amount (best in ATR units); time is discarded.
+    inputs: Close, ATR
+    signal: Brick-colour change as trend change; double-brick reversals.
+    code: {status: small, ref: [proposed stat.renko_dir], note: "must be computed causally on closes, fixed ATR at brick creation"}
+  - id: alt.three_line_break
+    name: Three-line break
+    family: candle.alt_chart
+    definition: A new line is drawn only when the close exceeds the prior line; a reversal needs a close beyond the last three lines.
+    inputs: Close
+    signal: Reversal line as trend change.
+    code: {status: small, ref: [proposed stat.line_break]}
+  - id: alt.kagi
+    name: Kagi chart
+    family: candle.alt_chart
+    definition: A line that changes direction only after a reversal of a set amount; thick and thin lines mark breaks of prior highs and lows.
+    inputs: Close
+    signal: Thin-to-thick change as buy, thick-to-thin as sell.
+    code: {status: small, ref: [proposed stat.kagi]}
+  - id: alt.point_figure
+    name: Point and figure
+    family: candle.alt_chart
+    definition: Columns of X and O with a box size and a three-box reversal; patterns such as double-top breakouts and bullish percent are read from it.
+    inputs: High, low, close
+    signal: Breakout above a prior X column top.
+    code: {status: small, ref: [proposed stat.pnf_signal]}
+
+  # ---------------------------------------------------------------- chart patterns: reversal
+  - id: chart.head_shoulders
+    name: Head and shoulders (and inverse)
+    family: chart.reversal
+    definition: Three swing highs with the middle one highest and the outer two similar, joined by a neckline through the two troughs. Inverse version at bottoms.
+    inputs: Confirmed swing pivots (ATR zigzag), close, optional volume
+    signal: Close through the neckline; measured target is the head-to-neckline distance projected from the break.
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP], note: "one of the patterns LMW2000 found informative"}
+    code: {status: small, ref: [proposed pattern.head_shoulders], note: "build on zigzag_pivots keyed on confirmed_at, like double_top_bottom"}
+  - id: chart.double_top_bottom
+    name: Double top and double bottom
+    family: chart.reversal
+    definition: Two swing extremes at about the same price separated by an opposite swing (the neckline).
+    inputs: Swing pivots, close, ATR
+    signal: Close through the neckline. Seed stk-double-bottom-breakout.
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP]}
+    code: {status: now, ref: [pattern.double_top_bottom]}
+  - id: chart.triple_top_bottom
+    name: Triple top and triple bottom
+    family: chart.reversal
+    definition: Three swing extremes near one price; in Japanese terms san-zan (three mountains) and three rivers.
+    inputs: Swing pivots
+    signal: Break of the intervening swing level.
+    code: {status: small, ref: [proposed pattern.multi_top_bottom with n=3]}
+  - id: chart.rounding
+    name: Rounding bottom (saucer) and rounding top
+    family: chart.reversal
+    definition: A slow curved turn with no sharp pivot, often over months.
+    inputs: Close, long lookback
+    signal: Break above the rim of the saucer.
+    code: {status: approximate, ref: [proposed pattern.rounding, quadratic fit with positive curvature]}
+  - id: chart.v_reversal
+    name: V-reversal (spike)
+    family: chart.reversal
+    definition: A sharp move reversed just as sharply with no base.
+    inputs: Close, ATR
+    signal: Hard to trade ahead of time; usually identified late.
+    code: {status: approximate, ref: [stat.zscore of returns]}
+  - id: chart.island_reversal
+    name: Island reversal
+    family: chart.reversal
+    definition: A group of bars isolated by a gap on each side, in opposite directions.
+    inputs: OHLC
+    signal: Reversal in the direction of the second gap.
+    forex: Needs gaps; does not form.
+    code: {status: small, ref: [proposed pattern.island]}
+  - id: chart.broadening
+    name: Broadening formation (megaphone)
+    family: chart.reversal
+    definition: Swing highs rising and swing lows falling - expanding volatility, often near tops.
+    inputs: Swing pivots
+    signal: Fade the extremes, or trade the breakout of the last swing.
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP], note: "broadening tops and bottoms were in LMW2000's set"}
+    code: {status: small, ref: [proposed pattern.broadening]}
+  - id: chart.diamond
+    name: Diamond top and bottom
+    family: chart.reversal
+    definition: A broadening formation that turns into a symmetrical triangle.
+    inputs: Swing pivots
+    signal: Break of the lower (top) or upper (bottom) trendline.
+    code: {status: approximate, ref: [proposed pattern.diamond]}
+  - id: chart.bump_and_run
+    name: Bump-and-run reversal
+    family: chart.reversal
+    definition: A trendline steepens into a speculative bump, then price falls back through the original trendline.
+    inputs: Close, trendline fit
+    signal: Close through the original lead-in trendline.
+    evidence: {grade: C, kind: practitioner, sources: [BULK_CP]}
+    code: {status: approximate, ref: [proposed pattern.bump_and_run]}
+  - id: chart.two_b
+    name: 2B reversal and 1-2-3 reversal
+    family: chart.reversal
+    definition: Price breaks a prior swing high, fails to hold, and closes back below it (2B); a trendline break, failed retest and break of the last swing (1-2-3).
+    inputs: Swing pivots, close
+    signal: Short when price closes back under the broken high (mirror for lows).
+    evidence: {grade: C, kind: practitioner, sources: [SPERANDEO1991]}
+    code: {status: small, ref: [proposed pattern.failed_break]}
+
+  # ---------------------------------------------------------------- chart patterns: continuation
+  - id: chart.triangles
+    name: Ascending, descending and symmetrical triangles
+    family: chart.continuation
+    definition: Converging swing highs and lows; ascending has flat tops and rising lows, descending the mirror.
+    inputs: Swing pivots (at least two of each), close
+    signal: Close outside the triangle; target is the widest part projected from the break.
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP], note: "triangle tops and bottoms were in LMW2000's set"}
+    code: {status: small, ref: [proposed pattern.triangle]}
+  - id: chart.wedges
+    name: Rising and falling wedges
+    family: chart.continuation
+    definition: Converging trendlines both sloping the same way; a rising wedge is usually bearish, a falling wedge bullish.
+    inputs: Swing pivots
+    signal: Break against the slope.
+    code: {status: small, ref: [proposed pattern.wedge]}
+  - id: chart.flags_pennants
+    name: Flags and pennants (and high tight flag)
+    family: chart.continuation
+    definition: A sharp move (the pole) followed by a short, shallow counter-move in a small channel (flag) or triangle (pennant).
+    inputs: Close, ATR, rolling returns
+    signal: Break of the flag in the pole's direction; target is the pole's length.
+    code: {status: small, ref: [proposed pattern.flag], note: "pole = return over N bars above k x ATR; flag = range below m x ATR"}
+  - id: chart.rectangles
+    name: Rectangles and trading ranges
+    family: chart.continuation
+    definition: Price oscillates between flat support and resistance.
+    inputs: Swing pivots or rolling high and low
+    signal: Fade the edges inside the range, or trade a close outside it.
+    evidence: {grade: B, kind: mixed, sources: [LMW2000, BULK_CP], note: "rectangle tops and bottoms were in LMW2000's set"}
+    code: {status: now, ref: [stat.highest, stat.lowest, talib.DONCHIAN]}
+  - id: chart.cup_handle
+    name: Cup with handle
+    family: chart.continuation
+    definition: A U-shaped base of several weeks to months followed by a small pullback (handle) near the prior high.
+    inputs: Close, volume, long lookback
+    signal: Break above the handle high on above-average volume.
+    evidence: {grade: C, kind: practitioner, sources: [ONEIL1988, BULK_CP]}
+    stocks: Growth stocks in a rising market; the method's home ground.
+    forex: Rarely used.
+    code: {status: approximate, ref: [proposed pattern.cup_handle]}
+  - id: chart.vcp
+    name: Volatility contraction pattern
+    family: chart.continuation
+    definition: A base in which each pullback is smaller than the last and volume dries up, ending in a tight pivot.
+    inputs: Swing pivots, ATR, relative volume
+    signal: Break of the pivot high on rising volume.
+    evidence: {grade: C, kind: practitioner, sources: [MINERVINI2013]}
+    forex: Not used.
+    code: {status: small, ref: [proposed pattern.vcp]}
+  - id: chart.darvas_box
+    name: Darvas box
+    family: chart.continuation
+    definition: A box from a new high and the low that follows; buy when price breaks out of the box to a new high.
+    inputs: High, low
+    signal: Break above the box top; stop under the box.
+    evidence: {grade: C, kind: practitioner, sources: [DARVAS1960]}
+    code: {status: small, ref: [proposed pattern.darvas_box]}
+  - id: chart.channels
+    name: Trend channels and trendlines
+    family: chart.continuation
+    definition: Parallel lines through swing highs and lows in a trend; a break of the trendline warns of a trend change.
+    inputs: Swing pivots or regression
+    signal: Buy near the lower line in an up-channel; exit on a close through it.
+    code: {status: now, ref: [talib.LINEARREG, talib.LINEARREG_SLOPE, talib.STDDEV], note: "regression channel; pivot-drawn trendlines need pattern.trendline (small)"}
+  - id: chart.measured_move
+    name: Measured move (ABC)
+    family: chart.continuation
+    definition: A move, a correction, then a second move of about the same size as the first.
+    inputs: Swing pivots
+    signal: Target for exits rather than an entry.
+    code: {status: small, ref: [proposed pattern.measured_target]}
+  - id: chart.gaps
+    name: Gap types (common, breakaway, runaway, exhaustion)
+    family: chart.continuation
+    definition: Gaps out of a range (breakaway), mid-trend (runaway or measuring) and at the end of a move (exhaustion, usually filled soon).
+    inputs: OHLC, relative volume
+    signal: Breakaway on volume - follow; exhaustion - fade after it fills.
+    stocks: Earnings and news gaps; the main US stock use.
+    forex: Weekend only.
+    code: {status: now, ref: [stat.gap_pct, stat.rel_volume]}
+
+  # ---------------------------------------------------------------- short-term bars and price action
+  - id: bar.inside_nr
+    name: Inside bar, NR4 and NR7
+    family: chart.bar
+    definition: A bar inside the prior bar's range, or the narrowest range of the last 4 or 7 bars - compression that often precedes expansion.
+    inputs: High, low
+    signal: Trade the break of the narrow bar's range.
+    code: {status: small, ref: [proposed stat.narrow_range], note: "inside bar is a one-line rule expression"}
+  - id: bar.outside_bar
+    name: Outside bar
+    family: chart.bar
+    definition: A bar whose range covers the prior bar's range.
+    inputs: High, low, close
+    signal: Close near the extreme in the direction of the close suggests follow-through.
+    code: {status: now, ref: [rule expression on high, low, shift()]}
+  - id: bar.pin_bar
+    name: Pin bar (rejection candle)
+    family: chart.bar
+    definition: Price-action name for a hammer or shooting star with a long tail poking through a level.
+    inputs: OHLC, level
+    signal: Same as hammer or shooting star at a level.
+    code: {status: now, ref: [talib.CDLHAMMER, talib.CDLSHOOTINGSTAR, pattern.zone_touch]}
+  - id: bar.opening_range_breakout
+    name: Opening range breakout
+    family: chart.bar
+    definition: Trade a break of the high or low of the first 5 to 30 minutes of the session.
+    inputs: Intraday bars, session calendar
+    signal: Stop entry at the range edge, exit by the close.
+    evidence: {grade: C, kind: mixed, sources: [CRABEL1990, ZBA2024], note: "ZBA2024 is a working paper on stocks in play"}
+    stocks: Day-trading; check moomoo SG day-trade rules and per-order fees first.
+    forex: Use the London or New York open as the session start.
+    code: {status: small, ref: [proposed stat.opening_range], note: "needs session boundaries per market"}
+  - id: bar.turtle_soup
+    name: Turtle soup (failed 20-day breakout)
+    family: chart.bar
+    definition: Fade a new 20-day high or low that reverses back inside the range soon after.
+    inputs: OHLC, 20-day high and low
+    signal: Enter against the failed breakout, stop beyond the new extreme.
+    evidence: {grade: C, kind: practitioner, sources: [CR1995]}
+    code: {status: now, ref: [stat.highest, stat.lowest, cross_below]}
+  - id: bar.holy_grail
+    name: ADX pullback (the Holy Grail setup)
+    family: chart.bar
+    definition: In a strong trend (ADX above 30) buy the first pullback to the 20 EMA.
+    inputs: ADX, EMA
+    signal: Entry on the move back above the prior bar's high.
+    evidence: {grade: C, kind: practitioner, sources: [CR1995]}
+    code: {status: now, ref: [talib.ADX, talib.EMA]}
+  - id: bar.always_in
+    name: Bar-by-bar price action reading
+    family: chart.bar
+    definition: Reading each bar's relationship to the prior bars (trend bars, signal bars, failed breakouts, two-legged pullbacks) to decide whether the market is in trend or range.
+    inputs: OHLC on intraday charts
+    signal: Discretionary; a chart-reading model can be scored on it forward only.
+    evidence: {grade: D, kind: practitioner, sources: [BROOKS2012]}
+    code: {status: approximate, ref: [chart reader agent, shadow-scored]}
+
+  # ---------------------------------------------------------------- trend indicators
+  - id: trend.ma_cross
+    name: Moving-average crossover and price-versus-MA
+    family: trend
+    definition: Long when a fast average is above a slow one (or price above its average), short or flat otherwise.
+    inputs: Close
+    signal: Cross of the averages; the 10-month or 200-day average is the classic filter.
+    evidence: {grade: B, kind: academic, sources: [BLL1992, STW1999, FABER2007, PI2007], note: "strong in old US data, much weaker after the late 1980s"}
+    code: {status: now, ref: [talib.SMA, talib.EMA, cross_above]}
+  - id: trend.ma_variants
+    name: Adaptive and low-lag averages (KAMA, DEMA, TEMA, T3, Hull, ZLEMA, MAMA, VWMA)
+    family: trend
+    definition: Averages that adapt their speed to noise (KAMA, MAMA) or reduce lag by extrapolation (DEMA, TEMA, Hull, ZLEMA).
+    inputs: Close (volume for VWMA)
+    signal: As for any average; less lag means more whipsaw.
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019, EHLERS2001]}
+    code: {status: now, ref: [talib.KAMA, talib.DEMA, talib.TEMA, talib.T3, talib.HMA, talib.ZLEMA, talib.MAMA, talib.VWMA]}
+  - id: trend.macd
+    name: MACD and PPO
+    family: trend
+    definition: Difference of two EMAs, its signal line and histogram; PPO is the same in percent.
+    inputs: Close
+    signal: Signal-line crosses, zero-line crosses, divergence with price. Seed stk-macd-trend-candle.
+    evidence: {grade: C, kind: practitioner, sources: [APPEL2005]}
+    code: {status: now, ref: [talib.MACD, talib.PPO, talib.APO]}
+  - id: trend.adx_dmi
+    name: ADX and directional movement (+DI, -DI)
+    family: trend
+    definition: Wilder's measure of trend strength (ADX) and direction (+DI versus -DI).
+    inputs: High, low, close
+    signal: ADX above 20 to 25 means trending; +DI over -DI means up. The repo's regime classifier uses ADX.
+    evidence: {grade: C, kind: practitioner, sources: [WILDER1978]}
+    code: {status: now, ref: [talib.ADX, talib.ADXR, talib.PLUS_DI, talib.MINUS_DI, talib.DX]}
+  - id: trend.parabolic_sar
+    name: Parabolic SAR
+    family: trend
+    definition: A trailing stop that accelerates toward price as the trend extends; flips when touched.
+    inputs: High, low
+    signal: Flip as entry or, better, as a trailing exit.
+    evidence: {grade: C, kind: practitioner, sources: [WILDER1978]}
+    code: {status: now, ref: [talib.SAR, talib.SAREXT]}
+  - id: trend.supertrend
+    name: SuperTrend
+    family: trend
+    definition: An ATR band around the median price that flips side when closed through.
+    inputs: High, low, close
+    signal: Flip as trend change; band as trailing stop.
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019]}
+    code: {status: now, ref: [talib.SUPERTREND]}
+  - id: trend.donchian
+    name: Donchian channel breakout (Turtle rules)
+    family: trend
+    definition: Buy a close above the highest high of N bars, exit on a shorter-period low. The Turtle system used 20 and 55 days with ATR sizing.
+    inputs: High, low
+    signal: Breakout; seed fx-donchian-breakout-h4.
+    evidence: {grade: B, kind: mixed, sources: [FAITH2007, BLL1992, HOP2017], note: "breakout rules are the trading-range-break rules in BLL1992"}
+    code: {status: now, ref: [talib.DONCHIAN, stat.highest, stat.lowest]}
+  - id: trend.aroon
+    name: Aroon
+    family: trend
+    definition: Bars since the last N-bar high and low, scaled to 0-100.
+    inputs: High, low
+    signal: Aroon up above down and above 70 means uptrend.
+    evidence: {grade: C, kind: practitioner, sources: [CHANDE1994]}
+    code: {status: now, ref: [talib.AROON, talib.AROONOSC]}
+  - id: trend.vortex
+    name: Vortex indicator
+    family: trend
+    definition: Compares upward and downward true-range movement to name the trend direction.
+    inputs: High, low, close
+    signal: VI+ crossing above VI-.
+    evidence: {grade: C, kind: practitioner, sources: [BS2010]}
+    code: {status: now, ref: [talib.VORTEX]}
+  - id: trend.linreg
+    name: Linear regression slope and forecast
+    family: trend
+    definition: Slope, angle and end value of a rolling least-squares line.
+    inputs: Close
+    signal: Positive slope as trend filter.
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019]}
+    code: {status: now, ref: [talib.LINEARREG_SLOPE, talib.LINEARREG_ANGLE, talib.TSF]}
+  - id: trend.trix_kst_coppock
+    name: TRIX, Know Sure Thing, Coppock curve
+    family: trend
+    definition: Smoothed rate-of-change measures for slow trend turns (Coppock was designed for monthly index bottoms).
+    inputs: Close
+    signal: Zero-line or signal-line crosses.
+    evidence: {grade: C, kind: practitioner, sources: [MURPHY1999]}
+    code: {status: now, ref: [talib.TRIX, talib.COPPOCK], note: "KST is small"}
+  - id: trend.ehlers_cycles
+    name: Ehlers Hilbert-transform cycle and trend mode
+    family: trend
+    definition: Signal-processing estimates of the dominant cycle length and whether the market is trending or cycling.
+    inputs: Close
+    signal: HT_TRENDMODE as a regime switch between trend and mean-reversion strategies.
+    evidence: {grade: C, kind: practitioner, sources: [EHLERS2001]}
+    code: {status: now, ref: [talib.HT_TRENDMODE, talib.HT_DCPERIOD, talib.HT_SINE, talib.HT_TRENDLINE]}
+
+  # ---------------------------------------------------------------- momentum and oscillators
+  - id: mom.rsi
+    name: RSI (including 2-period RSI)
+    family: momentum
+    definition: Wilder's ratio of average gains to losses, 0-100.
+    inputs: Close
+    signal: Classic 70/30 extremes and divergence; short-period RSI(2) below 10 in an uptrend as a dip-buy. Seeds stk-rsi2-meanrev and fx-rsi-range-reversion.
+    evidence: {grade: C, kind: practitioner, sources: [WILDER1978, CONNORS2008], note: "short-term reversal it exploits has academic support (J1990)"}
+    code: {status: now, ref: [talib.RSI]}
+  - id: mom.stochastic
+    name: Stochastic oscillator (and Stochastic RSI, SMI, KDJ)
+    family: momentum
+    definition: Where the close sits within the recent high-low range, smoothed.
+    inputs: High, low, close
+    signal: The %K line crossing %D in an extreme zone; divergence.
+    code: {status: now, ref: [talib.STOCH, talib.STOCHF, talib.STOCHRSI, talib.SMI, talib.KDJ]}
+  - id: mom.williams_r
+    name: Williams %R
+    family: momentum
+    definition: Inverted fast stochastic.
+    inputs: High, low, close
+    signal: Extremes and failure swings.
+    code: {status: now, ref: [talib.WILLR]}
+  - id: mom.cci
+    name: Commodity Channel Index
+    family: momentum
+    definition: Typical price's distance from its average in units of mean deviation.
+    inputs: High, low, close
+    signal: Above +100 trend or overbought depending on use; below -100 the mirror.
+    code: {status: now, ref: [talib.CCI]}
+  - id: mom.roc_mom
+    name: Rate of change and momentum
+    family: momentum
+    definition: Price change over N bars, absolute or percent.
+    inputs: Close
+    signal: Sign of N-bar return - the basis of time-series momentum.
+    code: {status: now, ref: [talib.ROC, talib.MOM, talib.ROCP]}
+  - id: mom.cmo_tsi_ultosc
+    name: Chande momentum, True Strength Index, Ultimate oscillator
+    family: momentum
+    definition: Variants that combine several smoothing lengths or count up and down closes differently.
+    inputs: Close (high and low for Ultimate)
+    signal: Extremes, zero crosses, divergence.
+    code: {status: now, ref: [talib.CMO, talib.TSI, talib.ULTOSC]}
+  - id: mom.divergence
+    name: Price and oscillator divergence
+    family: momentum
+    definition: Price makes a new swing extreme but the oscillator does not - weakening momentum.
+    inputs: Swing pivots on price and on the oscillator
+    signal: Reversal candidate after confirmation; frequent false signals in strong trends.
+    code: {status: small, ref: [proposed pattern.divergence], note: "compare confirmed price pivots with oscillator values at those pivots"}
+  - id: mom.connors_rsi
+    name: Connors RSI and short-term pullback systems
+    family: momentum
+    definition: Average of a short RSI, a streak RSI and a percentile rank of the last return.
+    inputs: Close
+    signal: Very low readings in an uptrend as dip-buys on index ETFs.
+    evidence: {grade: C, kind: practitioner, sources: [CONNORS2008]}
+    code: {status: small, ref: [proposed stat.connors_rsi]}
+  - id: mom.elder_ray_force
+    name: Elder-ray (bull and bear power) and force index
+    family: momentum
+    definition: High and low minus an EMA; force index is price change times volume.
+    inputs: OHLCV
+    signal: Bear power rising below zero in an uptrend as a buy (part of the triple screen).
+    evidence: {grade: C, kind: practitioner, sources: [ELDER1993]}
+    code: {status: now, ref: [talib.EFI, rule expression with talib.EMA]}
+  - id: mom.awesome_williams
+    name: Awesome and accelerator oscillators, Williams fractals and alligator
+    family: momentum
+    definition: Bill Williams' toolkit - median-price momentum, its acceleration, five-bar swing fractals and three offset averages.
+    inputs: High, low
+    signal: Fractal breakouts in the direction of the alligator's mouth.
+    evidence: {grade: D, kind: practitioner, sources: [WILLIAMS1995]}
+    code: {status: now, ref: [talib.AO, talib.AC, talib.FRACTAL], note: "alligator's forward offset must not be used as a future value"}
+  - id: mom.fisher_transform
+    name: Fisher transform
+    family: momentum
+    definition: Rescales price position in a range to a near-normal distribution so turns show as sharp peaks.
+    inputs: High, low
+    signal: Crosses of its signal line at extremes.
+    evidence: {grade: C, kind: practitioner, sources: [EHLERS2001]}
+    code: {status: small, ref: [proposed stat.fisher]}
+  - id: mom.schaff
+    name: Schaff trend cycle
+    family: momentum
+    definition: A stochastic of MACD, aimed at faster trend turns.
+    inputs: Close
+    signal: Crosses of 25 and 75.
+    code: {status: small, ref: [proposed stat.schaff]}
+  - id: mom.td_sequential
+    name: TD Sequential (setup and countdown)
+    family: momentum
+    definition: Counts nine consecutive closes beyond the close four bars earlier (setup), then thirteen qualifying closes (countdown), to flag exhaustion.
+    inputs: Close, high, low
+    signal: Fade the trend at a completed 9 or 13, ideally at a level.
+    evidence: {grade: C, kind: practitioner, sources: [PERL2008]}
+    code: {status: small, ref: [proposed stat.td_setup, stat.td_countdown]}
+
+  # ---------------------------------------------------------------- volatility
+  - id: vol.atr
+    name: ATR and normalised ATR
+    family: volatility
+    definition: Average true range, in price or as a percent of price.
+    inputs: High, low, close
+    signal: Not directional; sets stops, targets, position size and regime. Used throughout the repo.
+    evidence: {grade: C, kind: practitioner, sources: [WILDER1978]}
+    code: {status: now, ref: [talib.ATR, talib.NATR, stat.atr_pct]}
+  - id: vol.bollinger
+    name: Bollinger Bands, %b and bandwidth
+    family: volatility
+    definition: Average plus and minus k standard deviations; %b is position within the bands, bandwidth their width.
+    inputs: Close
+    signal: Fade band touches in ranges; ride band walks in trends; low bandwidth before breakouts.
+    evidence: {grade: C, kind: practitioner, sources: [BOLL2001]}
+    code: {status: now, ref: [talib.BBANDS]}
+  - id: vol.keltner
+    name: Keltner channels
+    family: volatility
+    definition: EMA plus and minus a multiple of ATR.
+    inputs: High, low, close
+    signal: Close outside the channel as breakout; middle as pullback level.
+    evidence: {grade: C, kind: practitioner, sources: [KELTNER1960, KAUFMAN2019]}
+    code: {status: now, ref: [talib.KC]}
+  - id: vol.squeeze
+    name: Squeeze (Bollinger inside Keltner)
+    family: volatility
+    definition: Bollinger Bands contract inside Keltner channels - compressed volatility likely to expand.
+    inputs: Close, high, low
+    signal: Trade the direction of momentum when the squeeze releases.
+    evidence: {grade: C, kind: practitioner, sources: [CARTER2012]}
+    code: {status: now, ref: [talib.BBANDS, talib.KC, talib.MOM]}
+  - id: vol.historical_vol_regime
+    name: Realised volatility percentile
+    family: volatility
+    definition: Current realised volatility ranked against its own past year.
+    inputs: Close
+    signal: Regime input; scale risk down when high (volatility targeting).
+    evidence: {grade: B, kind: academic, sources: [MM2017]}
+    code: {status: now, ref: [tradex.selection.regime.classify_regime, talib.STDDEV]}
+  - id: vol.chaikin_volatility_rvi_mass
+    name: Chaikin volatility, relative volatility index, mass index
+    family: volatility
+    definition: Rate of change of range, an RSI computed on standard deviation, and a range-expansion count for reversal bulges.
+    inputs: High, low, close
+    signal: Confirmation filters.
+    code: {status: now, ref: [talib.CVI, talib.RVI, talib.MASSI]}
+  - id: vol.vix_term
+    name: VIX level and term structure (stocks)
+    family: volatility
+    definition: Implied 30-day S&P 500 volatility; spot above futures (backwardation) marks stress.
+    inputs: VIX and VIX futures or VIX3M daily
+    signal: Risk-off regime when VIX is high or backwardated; equity dip-buys work better after spikes that start to fade.
+    evidence: {grade: B, kind: academic, sources: [WHALEY2000]}
+    forex: Indirect; high VIX usually coincides with yen strength.
+    code: {status: needs_data, ref: [Cboe daily VIX and VIX3M series]}
+
+  # ---------------------------------------------------------------- volume
+  - id: volu.relative_volume
+    name: Relative volume
+    family: volume
+    definition: Volume divided by its own recent average - a feed-independent measure.
+    inputs: Volume
+    signal: Confirms breakouts (seed stk-breakout-volume); high-volume days precede higher returns (GKM2001).
+    evidence: {grade: B, kind: academic, sources: [GKM2001, BEO1994]}
+    code: {status: now, ref: [stat.rel_volume, talib.RVOL]}
+  - id: volu.obv
+    name: On-balance volume
+    family: volume
+    definition: Running total adding volume on up closes and subtracting it on down closes.
+    inputs: Close, volume
+    signal: Divergence between OBV and price.
+    evidence: {grade: C, kind: practitioner, sources: [GRANVILLE1963]}
+    code: {status: now, ref: [talib.OBV], note: "level drifts with IEX feed coverage; use slope or divergence only"}
+  - id: volu.ad_cmf_mfi
+    name: Accumulation/distribution, Chaikin money flow and oscillator, money flow index
+    family: volume
+    definition: Volume weighted by where the close sits in the bar's range (A/D, CMF), or an RSI on price times volume (MFI).
+    inputs: OHLCV
+    signal: Positive flow during a base suggests accumulation; divergence.
+    code: {status: now, ref: [talib.AD, talib.ADOSC, talib.CMF, talib.MFI]}
+  - id: volu.pvt_nvi_pvi
+    name: Price-volume trend, negative and positive volume index
+    family: volume
+    definition: Cumulative measures that separate days of rising and falling volume.
+    inputs: Close, volume
+    signal: NVI above its one-year average as a bull-market filter (practitioner claim).
+    code: {status: now, ref: [talib.PVT, talib.NVI, talib.PVI, talib.PVO]}
+  - id: volu.volume_momentum
+    name: Volume and momentum interaction
+    family: volume
+    definition: Momentum is stronger and longer-lived in low-volume stocks and reverses sooner in high-volume ones.
+    inputs: Returns, turnover over months
+    signal: Cross-sectional stock selection.
+    evidence: {grade: B, kind: academic, sources: [LS2000]}
+    forex: Not applicable.
+    code: {status: needs_data, ref: [universe-wide daily bars with consolidated volume]}
+  - id: volu.climax
+    name: Volume climax and dry-up
+    family: volume
+    definition: An extreme volume spike at the end of a move (climax) or very low volume in a pullback (dry-up).
+    inputs: Volume, range
+    signal: Climax as exhaustion; dry-up as a healthy pullback in a trend.
+    code: {status: now, ref: [stat.rel_volume, stat.atr_pct]}
+  - id: volu.order_flow
+    name: Order flow, delta and footprint
+    family: volume
+    definition: Buyer- versus seller-initiated volume per price.
+    inputs: Tick data with trade side
+    signal: Absorption and imbalance at levels.
+    evidence: {grade: B, kind: academic, sources: [EL2002], note: "academic support is for interdealer FX order flow, which retail cannot see"}
+    code: {status: needs_data, ref: [not available from Alpaca IEX bars or Oanda]}
+
+  # ---------------------------------------------------------------- profile and VWAP
+  - id: prof.vwap_session
+    name: Session VWAP and bands
+    family: profile
+    definition: Volume-weighted average price since the session open, with standard-deviation bands.
+    inputs: Intraday OHLCV, session calendar
+    signal: Intraday trend bias (above or below VWAP); reversion to VWAP from the bands.
+    evidence: {grade: C, kind: practitioner, sources: [DJD1990], note: "VWAP is a standard execution benchmark; as a signal it is practitioner"}
+    forex: No real volume; time-weighted alternative only.
+    code: {status: small, ref: [proposed stat.session_vwap], note: "talib.VWAP is cumulative from the first bar, not per session"}
+  - id: prof.anchored_vwap
+    name: Anchored VWAP
+    family: profile
+    definition: VWAP started at a chosen event (earnings, a swing low, a gap) - the average cost of everyone who traded since.
+    inputs: OHLCV, anchor event
+    signal: Support and resistance at the anchored line.
+    evidence: {grade: C, kind: practitioner, sources: [SHANNON2023]}
+    code: {status: small, ref: [proposed stat.anchored_vwap with anchor = last confirmed pivot]}
+  - id: prof.market_profile
+    name: Market profile (time-price opportunity)
+    family: profile
+    definition: Distribution of time spent at each price over a session; value area holds about 70% of activity, point of control the most.
+    inputs: Intraday bars
+    signal: Open outside value and failing back in predicts a move to the other side (practitioner 80% rule).
+    evidence: {grade: C, kind: practitioner, sources: [SK1986, DJD1990]}
+    code: {status: small, ref: [proposed stat.value_area]}
+  - id: prof.volume_profile
+    name: Volume profile, high- and low-volume nodes
+    family: profile
+    definition: Volume traded at each price over a window; low-volume gaps tend to be crossed quickly, high-volume nodes act as magnets.
+    inputs: Intraday OHLCV
+    signal: Targets and stop placement.
+    forex: Not usable without volume.
+    code: {status: small, ref: [proposed stat.volume_nodes]}
+
+  # ---------------------------------------------------------------- levels and pivots
+  - id: lvl.swing_sr
+    name: Horizontal support and resistance from swings
+    family: levels
+    definition: Prices where earlier swings turned; old resistance becomes support after a break.
+    inputs: Swing pivots
+    signal: Reactions at the level; break and retest entries.
+    code: {status: now, ref: [pattern.pivot_high, pattern.pivot_low, pattern.zone_touch]}
+  - id: lvl.round_numbers
+    name: Round numbers and stop clustering
+    family: levels
+    definition: Prices ending in 00 or 50 attract take-profit orders (reversals) and have stop orders clustered just beyond them (accelerations once crossed).
+    inputs: Price
+    signal: Expect bounces at round numbers, faster moves after a break through.
+    evidence: {grade: B, kind: academic, sources: [OSLER2000, OSLER2003]}
+    stocks: Whole-dollar levels; weaker evidence than in forex.
+    forex: Strongest academic evidence in this catalog for chart levels (USD/JPY 150.00, EUR/USD 1.1000).
+    code: {status: small, ref: [proposed stat.round_level_distance]}
+  - id: lvl.prior_period_hlc
+    name: Prior day, week and month high, low and close
+    family: levels
+    definition: Last period's extremes and close, watched by many traders.
+    inputs: Higher-timeframe bars
+    signal: Breakouts and failures at these levels.
+    code: {status: now, ref: [stat.highest with tf D1/W1, multi-timeframe features]}
+  - id: lvl.floor_pivots
+    name: Floor-trader pivots (classic, Woodie, Camarilla, Fibonacci, DeMark)
+    family: levels
+    definition: Levels computed from the prior period's high, low and close (P = (H+L+C)/3, with R1-R3 and S1-S3 around it).
+    inputs: Prior-period HLC
+    signal: Fade at R1 and S1 in ranges; break of R1 or S1 for trend days.
+    evidence: {grade: C, kind: practitioner, sources: [MURPHY1999, PERL2008]}
+    code: {status: small, ref: [proposed stat.pivots(kind=classic|woodie|camarilla|fib|demark)]}
+  - id: lvl.supply_demand
+    name: Supply and demand zones
+    family: levels
+    definition: The base a sharp move left from; price returning to it is expected to react.
+    inputs: OHLC, ATR
+    signal: Limit entry at the zone on first return.
+    evidence: {grade: D, kind: practitioner, sources: [MURPHY1999]}
+    code: {status: small, ref: [proposed pattern.departure_zone]}
+  - id: lvl.liquidity_sweep
+    name: Liquidity sweeps and stop runs (also "smart money concepts")
+    family: levels
+    definition: Price pushes just beyond an obvious high or low where stops sit, then reverses. Online "smart money" jargon (order blocks, fair value gaps) relabels older ideas.
+    inputs: Swing pivots, close
+    signal: Same as a 2B or turtle soup. The stop-clustering mechanism has academic support (OSLER2003); the jargon does not.
+    evidence: {grade: C, kind: mixed, sources: [OSLER2003, CR1995]}
+    code: {status: small, ref: [proposed pattern.failed_break]}
+  - id: lvl.dynamic_ma
+    name: Moving averages as dynamic support
+    family: levels
+    definition: Pullbacks in a trend often hold at a widely watched average (20, 50, 200).
+    inputs: Close, EMA
+    signal: Pullback entry; seeds stk-ema-pullback-swing and fx-trend-pullback-engulfing.
+    code: {status: now, ref: [pattern.zone_touch, talib.EMA]}
+
+  # ---------------------------------------------------------------- Fibonacci and harmonics
+  - id: fib.retracement
+    name: Fibonacci retracements
+    family: fib_harmonic
+    definition: Pullback levels at 23.6, 38.2, 50, 61.8 and 78.6 percent of a swing.
+    inputs: Last confirmed swing
+    signal: Entries at the 38.2-61.8 zone with a candle confirmation.
+    code: {status: small, ref: [proposed pattern.fib_levels]}
+  - id: fib.extension
+    name: Fibonacci extensions and projections
+    family: fib_harmonic
+    definition: Targets at 127.2, 161.8 and 261.8 percent of a swing.
+    inputs: Swing pivots
+    signal: Exit targets.
+    code: {status: small, ref: [proposed pattern.fib_levels]}
+  - id: fib.time_fans_arcs
+    name: Fibonacci time zones, fans and arcs
+    family: fib_harmonic
+    definition: Fibonacci ratios applied to time and to sloped lines.
+    inputs: Swing pivots
+    signal: Turn dates and sloped levels.
+    code: {status: approximate, ref: [not recommended]}
+  - id: fib.harmonics
+    name: Harmonic patterns (Gartley, bat, butterfly, crab, shark, cypher)
+    family: fib_harmonic
+    definition: Five-point XABCD shapes whose legs match specific Fibonacci ratios; the completion point D is the entry.
+    inputs: Swing pivots
+    signal: Reversal at D.
+    code: {status: small, ref: [proposed pattern.harmonic(kind)], note: "many shapes x tolerances = many trials; count them all in the ledger"}
+  - id: fib.abcd_three_drives
+    name: AB=CD and three drives
+    family: fib_harmonic
+    definition: Equal legs (AB=CD) or three pushes with Fibonacci ratios between them.
+    inputs: Swing pivots
+    signal: Reversal at the completion.
+    code: {status: small, ref: [proposed pattern.abcd]}
+
+  # ---------------------------------------------------------------- frameworks
+  - id: fw.dow
+    name: Dow theory
+    family: framework
+    definition: Trends have primary, secondary and minor parts; a primary trend is confirmed when averages make higher highs and lows, and the industrial and transport averages should agree.
+    inputs: Index bars, swing pivots
+    signal: Primary-trend regime filter.
+    evidence: {grade: B, kind: academic, sources: [HAMILTON1922, BGK1998], note: "BGK1998 found Hamilton's calls had market-timing value, on one historical record"}
+    stocks: Use SPY and IYT or similar ETFs.
+    forex: Not used as such.
+    code: {status: small, ref: [proposed regime.dow from pivots on two indices]}
+  - id: fw.elliott
+    name: Elliott wave
+    family: framework
+    definition: Trends move in five waves and corrections in three, nested across timeframes, with Fibonacci relations between waves.
+    inputs: Swing pivots at several scales
+    signal: Enter late in wave 2 or 4 for waves 3 or 5.
+    evidence: {grade: D, kind: practitioner, sources: [FP1978], note: "counts are subjective and revised after the fact"}
+    code: {status: approximate, ref: [chart reader agent, shadow-scored only]}
+  - id: fw.wyckoff
+    name: Wyckoff method
+    family: framework
+    definition: Ranges are accumulation or distribution by large operators, with named events - selling climax, spring (false break below the range), sign of strength, last point of support, upthrust.
+    inputs: Range bounds, volume, swing pivots
+    signal: Long on a spring that closes back inside the range on rising volume, or on a backup after a sign of strength.
+    evidence: {grade: C, kind: practitioner, sources: [PRUDEN2007]}
+    code: {status: small, ref: [proposed pattern.spring_upthrust], note: "the spring is codable; the full phase map is approximate"}
+  - id: fw.gann
+    name: Gann angles and square of nine
+    family: framework
+    definition: Price-time angles and numerological price grids.
+    inputs: Price, time
+    signal: Levels and turn dates.
+    evidence: {grade: D, kind: practitioner, sources: [MURPHY1999]}
+    code: {status: approximate, ref: [not recommended]}
+  - id: fw.weinstein_stages
+    name: Weinstein stage analysis
+    family: framework
+    definition: Four stages - base, advance, top, decline - read from price versus a rising or falling 30-week average and relative strength.
+    inputs: Weekly bars, index
+    signal: Buy breakouts into stage 2; avoid or short stage 4.
+    evidence: {grade: C, kind: practitioner, sources: [WEINSTEIN1988]}
+    forex: Not used.
+    code: {status: small, ref: [proposed regime.weinstein_stage]}
+  - id: fw.canslim_trend_template
+    name: CAN SLIM and the trend template
+    family: framework
+    definition: Growth-stock selection combining earnings growth, new highs, leadership and market direction; the trend template requires price above rising 50, 150 and 200-day averages and near a 52-week high.
+    inputs: Daily bars, earnings data, index
+    signal: Watchlist filter for breakout setups (cup with handle, VCP).
+    evidence: {grade: C, kind: practitioner, sources: [ONEIL1988, MINERVINI2013], note: "the 52-week-high component has academic support (GH2004)"}
+    forex: Not used.
+    code: {status: now, ref: [talib.SMA, stat.highest], note: "price part now; earnings part needs_data"}
+  - id: fw.turtle
+    name: Turtle trading system
+    family: framework
+    definition: Complete breakout system - 20 and 55-day breakouts, ATR-based units, pyramiding, fixed exits.
+    inputs: OHLC, ATR
+    signal: See trend.donchian.
+    evidence: {grade: B, kind: mixed, sources: [FAITH2007, HOP2017]}
+    code: {status: now, ref: [talib.DONCHIAN, talib.ATR]}
+  - id: fw.triple_screen
+    name: Elder triple screen
+    family: framework
+    definition: Weekly trend sets the direction, a daily oscillator finds pullbacks against it, an intraday break times the entry.
+    inputs: Three timeframes
+    signal: Only trade with the long-timeframe tide, entering on short-timeframe waves.
+    evidence: {grade: C, kind: practitioner, sources: [ELDER1993]}
+    code: {status: now, ref: [multi-timeframe features via tf]}
+  - id: fw.intermarket
+    name: Intermarket analysis
+    family: framework
+    definition: Relationships among bonds, stocks, commodities and the dollar (e.g. rising yields with a rising dollar; copper and stocks).
+    inputs: Several markets' daily bars
+    signal: Regime and confirmation filter.
+    evidence: {grade: C, kind: practitioner, sources: [MURPHY1991]}
+    forex: USD/JPY tracks US-Japan yield spreads and equity risk appetite.
+    code: {status: needs_data, ref: [extra symbols - yields from FRED, ETFs from Alpaca]}
+
+  # ---------------------------------------------------------------- ichimoku
+  - id: ichi.tenkan_kijun
+    name: Tenkan-sen and kijun-sen cross
+    family: ichimoku
+    definition: Midpoints of the 9 and 26-bar ranges; their cross is a signal, stronger above the cloud.
+    inputs: High, low
+    signal: Tenkan crossing kijun in the cloud's direction.
+    code: {status: now, ref: [talib.MIDPRICE period 9 and 26]}
+  - id: ichi.cloud
+    name: Kumo (cloud), senkou span A and B
+    family: ichimoku
+    definition: Span A is the tenkan-kijun average and span B the 52-bar midpoint, both plotted 26 bars ahead; the band between is the cloud.
+    inputs: High, low
+    signal: Price above the cloud is bullish; the cloud is support and resistance; a cloud twist warns of change.
+    code: {status: small, ref: [proposed stat.ichimoku], note: "plotting ahead is display only; at bar t use the span values computed 26 bars ago"}
+  - id: ichi.chikou
+    name: Chikou span (lagging line)
+    family: ichimoku
+    definition: Today's close plotted 26 bars back; compared with the price then.
+    inputs: Close
+    signal: Close above the close of 26 bars ago confirms.
+    code: {status: now, ref: [rule expression close > shift(close, 26)], note: "never use the plotted series as if it were known in the past"}
+
+  # ---------------------------------------------------------------- regime and multi-timeframe
+  - id: reg.trend_vol_grid
+    name: Trend-by-volatility regime grid
+    family: regime
+    definition: The repo's labels - ADX trend or range by low, normal or high volatility percentile.
+    inputs: OHLC
+    signal: Route families to regimes where they historically worked.
+    code: {status: now, ref: [tradex.selection.regime.classify_regime]}
+  - id: reg.efficiency_choppiness
+    name: Efficiency ratio, choppiness index, vertical horizontal filter
+    family: regime
+    definition: How straight the path is - 1 for a straight line, near 0 for noise.
+    inputs: Close (high and low for choppiness)
+    signal: Trend strategies when efficient, mean reversion when choppy.
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019]}
+    code: {status: now, ref: [stat.efficiency_ratio, talib.ER, talib.VHF], note: "choppiness index is small"}
+  - id: reg.hurst
+    name: Hurst exponent
+    family: regime
+    definition: Above 0.5 suggests persistence, below 0.5 mean reversion.
+    inputs: Close, long window
+    signal: Regime switch; estimates are noisy on short windows.
+    evidence: {grade: D, kind: mixed, sources: [PETERS1994]}
+    code: {status: small, ref: [proposed stat.hurst]}
+  - id: reg.markov_switching
+    name: Markov regime-switching model
+    family: regime
+    definition: A statistical model with hidden states (e.g. calm and turbulent) estimated from returns.
+    inputs: Returns
+    signal: Probability of the turbulent state as a risk scaler. Must be re-estimated walk-forward only.
+    evidence: {grade: B, kind: academic, sources: [HAMILTON1989]}
+    code: {status: small, ref: [proposed regime.markov (statsmodels)]}
+  - id: reg.higher_tf_filter
+    name: Higher-timeframe trend filter
+    family: regime
+    definition: Take signals on a lower timeframe only in the direction of the higher-timeframe trend.
+    inputs: Two timeframes
+    signal: Filter; already used by several seeds.
+    evidence: {grade: C, kind: practitioner, sources: [ELDER1993]}
+    code: {status: now, ref: [feature tf with causal alignment]}
+  - id: reg.breadth
+    name: Market breadth (advance-decline, percent above 200-day, new highs minus lows)
+    family: regime
+    definition: How many stocks take part in the index move.
+    inputs: Universe-wide daily bars
+    signal: Weak breadth under a rising index warns; breadth thrusts mark strong starts.
+    evidence: {grade: C, kind: practitioner, sources: [MURPHY1999]}
+    forex: Not applicable.
+    code: {status: needs_data, ref: [point-in-time S&P 500 constituents to avoid survivorship]}
+  - id: reg.correlation
+    name: Correlation regime
+    family: regime
+    definition: When cross-asset correlations jump, diversification disappears and stress follows.
+    inputs: Several markets' returns
+    signal: Cut gross exposure when average correlation spikes.
+    code: {status: now, ref: [tradex.selection correlation clusters]}
+
+  # ---------------------------------------------------------------- statistical price anomalies
+  - id: q.tsmom
+    name: Time-series momentum (trend following)
+    family: quant
+    definition: Go long assets whose past 1-12 month return is positive and short those negative, sized by volatility.
+    inputs: Daily closes, volatility
+    signal: Sign of the lookback return.
+    evidence: {grade: A, kind: academic, sources: [MOP2012, HOP2017]}
+    stocks: Index and sector ETFs.
+    forex: Works on currencies in MOP2012's sample.
+    code: {status: now, ref: [talib.ROC, stat.atr_pct]}
+  - id: q.xs_momentum
+    name: Cross-sectional momentum and relative strength
+    family: quant
+    definition: Buy the past 3-12 month winners and avoid or short losers, skipping the most recent month.
+    inputs: Universe-wide daily bars
+    signal: Rank and hold top decile for months.
+    evidence: {grade: A, kind: academic, sources: [JT1993, LEVY1967, AMP2013]}
+    forex: Currency momentum exists but is concentrated in less liquid currencies (MSSS2012M).
+    code: {status: needs_data, ref: [point-in-time universe]}
+  - id: q.short_term_reversal
+    name: Short-term reversal
+    family: quant
+    definition: Last week's or month's losers tend to bounce and winners to give back.
+    inputs: Returns
+    signal: Buy short-term losers in liquid names; the mechanism behind RSI(2) dip-buys.
+    evidence: {grade: B, kind: academic, sources: [J1990], note: "much of the profit is eaten by costs in recent decades"}
+    code: {status: now, ref: [talib.ROC, talib.RSI]}
+  - id: q.52wk_high
+    name: Nearness to the 52-week high
+    family: quant
+    definition: Stocks near their 52-week high keep outperforming; investors anchor on the old high.
+    inputs: Close, 252-day high
+    signal: Rank by close divided by 52-week high.
+    evidence: {grade: B, kind: academic, sources: [GH2004]}
+    code: {status: now, ref: [stat.highest period 252]}
+  - id: q.pairs
+    name: Pairs trading and statistical arbitrage
+    family: quant
+    definition: Trade the spread between two historically linked stocks when it stretches, expecting it to close.
+    inputs: Two price series
+    signal: Spread z-score beyond 2.
+    evidence: {grade: B, kind: academic, sources: [GGR2006], note: "returns fell over time in GGR2006's own sample"}
+    forex: Cross-rate triangular mispricings are a data alarm, not an opportunity, per the loop critique.
+    code: {status: small, ref: [proposed pair spread feature; needs two-symbol strategies in the spec]}
+  - id: q.vol_targeting
+    name: Volatility targeting
+    family: quant
+    definition: Scale exposure inversely to recent volatility.
+    inputs: Returns
+    signal: Sizing rule, not entry.
+    evidence: {grade: B, kind: academic, sources: [MM2017]}
+    code: {status: now, ref: [tradex.risk.sizing]}
+  - id: q.intraday_momentum
+    name: Market intraday momentum
+    family: quant
+    definition: The S&P 500's first half-hour return predicts the direction of its last half-hour.
+    inputs: Intraday index bars
+    signal: Trade the last 30 minutes in the direction of the first 30.
+    evidence: {grade: B, kind: academic, sources: [GHLZ2018]}
+    forex: Not tested here.
+    code: {status: small, ref: [proposed stat.session_return(window)]}
+  - id: q.overnight_intraday
+    name: Overnight versus intraday returns
+    family: quant
+    definition: Some stocks earn their returns overnight and others intraday, persistently.
+    inputs: Open and close
+    signal: Hold overnight in names with persistent overnight returns.
+    evidence: {grade: B, kind: academic, sources: [LPS2019]}
+    code: {status: now, ref: [stat.gap_pct]}
+  - id: q.turn_of_month
+    name: Turn-of-the-month and holiday effects
+    family: quant
+    definition: US stock returns are concentrated around the last and first trading days of the month and before holidays.
+    inputs: Trading calendar
+    signal: Calendar filter.
+    evidence: {grade: B, kind: academic, sources: [LS1988]}
+    code: {status: small, ref: [proposed filter calendar_window]}
+  - id: q.fomc_drift
+    name: Pre-FOMC drift
+    family: quant
+    definition: US stocks rose on average in the 24 hours before scheduled FOMC announcements in LM2015's sample.
+    inputs: FOMC calendar
+    signal: Long index exposure into announcements.
+    evidence: {grade: B, kind: academic, sources: [LM2015], note: "single study; recheck on recent data"}
+    code: {status: needs_data, ref: [FOMC calendar]}
+  - id: q.pead
+    name: Post-earnings announcement drift
+    family: quant
+    definition: Prices keep drifting in the direction of an earnings surprise for weeks.
+    inputs: Earnings surprises or the announcement-day return and gap
+    signal: Follow the earnings gap direction; the price-only proxy is the gap plus volume.
+    evidence: {grade: A, kind: academic, sources: [BT1989]}
+    forex: Not applicable.
+    code: {status: needs_data, ref: [earnings calendar; price proxy uses stat.gap_pct now]}
+  - id: q.high_volume_premium
+    name: High-volume return premium
+    family: quant
+    definition: Stocks with unusually high trading volume over a day or week tend to rise over the next month.
+    inputs: Volume
+    signal: Rank by abnormal volume.
+    evidence: {grade: B, kind: academic, sources: [GKM2001]}
+    code: {status: now, ref: [stat.rel_volume]}
+
+  # ---------------------------------------------------------------- forex-specific
+  - id: fx.carry
+    name: Carry trade
+    family: forex
+    definition: Hold high-interest currencies against low-interest ones and earn the rate difference (paid as daily financing).
+    inputs: Policy and short rates, Oanda financing rates
+    signal: Long the higher-yielder when the differential beats costs; cut exposure when global FX volatility rises.
+    weaknesses: Crash risk - slow gains, sudden large losses when carry unwinds (the 2024 yen unwind is a scenario in the loop critique).
+    evidence: {grade: A, kind: academic, sources: [LRV2011, MSSS2012C, BNP2008]}
+    forex: USD/JPY is a classic carry pair; Oanda's financing field gives the real amount after its markup.
+    code: {status: needs_data, ref: [tradex/costs/policy_rates.csv (estimate), OANDA_V20 financing]}
+  - id: fx.momentum
+    name: Currency momentum
+    family: forex
+    definition: Currencies that rose over recent months keep rising, across a basket.
+    inputs: Daily closes of many pairs
+    signal: Rank currencies by past return.
+    weaknesses: Profits concentrate in less liquid currencies with high costs (MSSS2012M); with only a few majors the basket is small.
+    evidence: {grade: B, kind: academic, sources: [MSSS2012M, MOP2012]}
+    code: {status: now, ref: [talib.ROC across symbols]}
+  - id: fx.value
+    name: Currency value (real exchange-rate reversion)
+    family: forex
+    definition: Currencies far from purchasing-power parity tend to revert over years.
+    inputs: Price levels (CPI) and exchange rates
+    signal: Slow tilt toward undervalued currencies.
+    weaknesses: Very slow; useless for swing trading except as a bias.
+    evidence: {grade: B, kind: academic, sources: [AMP2013]}
+    code: {status: needs_data, ref: [CPI series from FRED]}
+  - id: fx.sessions
+    name: Trading-session effects (Tokyo, London, New York, overlap)
+    family: forex
+    definition: Volume and volatility follow the session clock - quiet Asian hours, a jump at the London open, peak during the London-New York overlap.
+    inputs: Intraday bars, session clock
+    signal: Asian-range breakout at the London open; avoid entries in thin hours; size stops by session volatility.
+    weaknesses: Well known, so simple versions are crowded.
+    evidence: {grade: B, kind: academic, sources: [IH2006]}
+    code: {status: small, ref: [proposed stat.session_range(session)]}
+  - id: fx.fixings
+    name: London 4pm and Tokyo fixing flows
+    family: forex
+    definition: Large orders executed at benchmark fixes cause predictable patterns around them; the dollar tends to rise into fixes and fall after, in KMW2024's sample.
+    inputs: Intraday bars, fix times
+    signal: Trade around 16:00 London and 09:55 Tokyo.
+    weaknesses: Small moves relative to spread for retail; regulators changed fix windows after 2015.
+    evidence: {grade: B, kind: academic, sources: [KMW2024, IY2017]}
+    code: {status: small, ref: [proposed stat.time_window_return]}
+  - id: fx.gotobi
+    name: Gotobi days (Japanese settlement days)
+    family: forex
+    definition: On dates ending in 5 or 0, Japanese importers buy dollars at the Tokyo fix, said to lift USD/JPY in early Tokyo hours.
+    inputs: Calendar, intraday USD/JPY
+    signal: Long USD/JPY early Tokyo on gotobi days, exit at the fix.
+    weaknesses: Small effect, mostly practitioner lore; IY2017 documents Tokyo-fix order imbalances generally.
+    evidence: {grade: C, kind: mixed, sources: [IY2017]}
+    code: {status: small, ref: [proposed filter gotobi_day]}
+  - id: fx.rollover
+    name: Rollover and financing timing
+    family: forex
+    definition: Positions open at 17:00 New York pay or receive a day's financing; Oanda books the weekend's financing on one weekday, so holding through that day costs or earns three days.
+    inputs: Oanda financing rates, position direction
+    signal: Avoid crossing rollover on negative-carry positions with little remaining edge; the repo's position reviewer already does this.
+    weaknesses: Not a signal by itself.
+    evidence: {grade: A, kind: academic, sources: [OANDA_V20], note: "a cost rule, not an anomaly"}
+    code: {status: now, ref: [tradex/costs/models.py, tradex/positions/review.py]}
+  - id: fx.rate_differential
+    name: Yield-spread driver (e.g. US-Japan 2-year spread for USD/JPY)
+    family: forex
+    definition: Changes in the interest-rate gap between two countries drive their exchange rate over weeks.
+    inputs: Government bond yields
+    signal: Trade the pair in the direction of the spread's trend; divergence between spread and price as warning.
+    weaknesses: The relationship breaks during interventions and risk-off episodes.
+    evidence: {grade: B, kind: mixed, sources: [MURPHY1991, FRED]}
+    code: {status: needs_data, ref: [daily yields from FRED]}
+  - id: fx.risk_on_off
+    name: Risk-on and risk-off (safe-haven yen)
+    family: forex
+    definition: In stress, the yen and dollar tend to strengthen and carry trades unwind.
+    inputs: VIX, equity index returns
+    signal: Cut yen-short exposure when VIX spikes; treat JPY pairs as one bet.
+    weaknesses: The relationship changes with policy regimes.
+    evidence: {grade: B, kind: academic, sources: [BNP2008, MSSS2012C]}
+    code: {status: needs_data, ref: [VIX daily]}
+  - id: fx.intervention
+    name: Intervention risk zones
+    family: forex
+    definition: Japan's Ministry of Finance has sold dollars for yen when USD/JPY moved fast near multi-decade highs (2022, 2024), causing moves of several yen in hours.
+    inputs: Price level, speed of move, official statements, MOF data
+    signal: Not an entry - a ruin scenario. Cap USD/JPY long size and widen stops when price is near past intervention levels and rising fast.
+    weaknesses: Timing is political and unpredictable.
+    evidence: {grade: B, kind: academic, sources: [MOF_JP]}
+    code: {status: small, ref: [proposed filter jpy_intervention_zone]}
+  - id: fx.news_events
+    name: Scheduled macro releases (payrolls, CPI, central-bank meetings)
+    family: forex
+    definition: Spreads widen and price jumps around top-tier releases.
+    inputs: Economic calendar
+    signal: Block entries near releases (seed filter no_high_impact_news_30m); some strategies trade the post-release drift.
+    weaknesses: Needs an event calendar feed.
+    evidence: {grade: B, kind: academic, sources: [EL2002]}
+    code: {status: needs_data, ref: [economic calendar for no_high_impact_news_30m]}
+  - id: fx.weekend_gap
+    name: Sunday open gaps
+    family: forex
+    definition: Price can open on Sunday evening away from Friday's close after weekend news; practitioners expect many gaps to fill.
+    inputs: Friday close, Sunday open
+    signal: Fade the gap toward Friday's close.
+    weaknesses: Thin liquidity and wide spreads at the open; untested claim.
+    evidence: {grade: D, kind: practitioner, sources: [MURPHY1999]}
+    code: {status: now, ref: [stat.gap_pct on forex bars]}
+  - id: fx.positioning
+    name: Speculative positioning (CFTC Commitments of Traders)
+    family: forex
+    definition: Weekly report of futures positions by trader type; extreme speculative positioning is read as crowded.
+    inputs: CFTC COT data (weekly, released with a lag)
+    signal: Contrarian at extremes, or trend-following on changes.
+    weaknesses: Weekly and three days stale; futures only.
+    evidence: {grade: C, kind: practitioner, sources: [CFTC_COT]}
+    code: {status: needs_data, ref: [CFTC COT download]}
+
+  # ---------------------------------------------------------------- exits
+  - id: exit.atr_stop_target
+    name: ATR stop and R-multiple target
+    family: exit
+    definition: Stop k x ATR from entry; target a multiple of that risk.
+    inputs: ATR
+    signal: The repo's default exit (stop_atr, target_r).
+    code: {status: now, ref: [ExitRules.stop_atr, ExitRules.target_r]}
+  - id: exit.chandelier
+    name: Chandelier and ATR trailing stops
+    family: exit
+    definition: Trail the stop k x ATR below the highest high since entry.
+    inputs: High, ATR
+    signal: Lets winners run in trends.
+    code: {status: now, ref: [ExitRules.trail_atr]}
+  - id: exit.time_stop
+    name: Time stop
+    family: exit
+    definition: Close a trade that has not worked within N bars; the loop critique sets it at the 80th percentile of winning holding time.
+    inputs: Bars since entry
+    signal: Mandatory in the repo (max_bars).
+    evidence: {grade: C, kind: practitioner, sources: [KAUFMAN2019]}
+    code: {status: now, ref: [ExitRules.max_bars]}
+  - id: exit.breakeven_partial
+    name: Breakeven move and partial profit
+    family: exit
+    definition: Move the stop to entry after a gain of x R; optionally bank part of the position.
+    inputs: Price, entry, risk
+    signal: Reduces losses on reversals at the cost of more small scratches.
+    code: {status: now, ref: [ExitRules.breakeven_r], note: "partial exits are small"}
+  - id: exit.signal_reversal
+    name: Opposite signal or candle reversal exit
+    family: exit
+    definition: Exit when the entry logic flips or a reversal candle appears at a level (Nison's change-of-trend use).
+    inputs: Features
+    signal: exit.long_when and exit.short_when rules.
+    code: {status: now, ref: [ExitRules.long_when, ExitRules.short_when]}
