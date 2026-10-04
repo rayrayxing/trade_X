@@ -13,7 +13,8 @@ For each symbol with a bar closing at ``ts``:
 1. On the base (finest) timeframe, simulated brokers process the bar: orders placed at
    the last close fill at this open, stops and targets are checked inside the bar. Every
    book's new fills (polled with ``fills(since)``, so venues work the same) become Fill
-   and Close rows.
+   and Close rows. This runs for every symbol first; then Ray's commands and the agent
+   requests written during the bar are applied, so their orders fill at the next open.
 2. Open positions of strategies on this timeframe are reviewed with the same
    PositionReviewer the backtester uses (time stop, stale, unreachable target, rollover,
    events, break-even and trailing).
@@ -21,30 +22,42 @@ For each symbol with a bar closing at ``ts``:
    window of at least three lookbacks). Qualified strategies vote in the ensemble book;
    every active strategy also trades its own virtual book.
 4. Gate 2 finalises a plan, gate 3 applies context vetoes (event calendar, short-side
-   checks), gate 4 (the risk gate) sets the size, within the free margin of the venue
+   checks, standing agent vetoes and shrinks), gate 4 (the risk gate) sets the size, within the free margin of the venue
    the trade goes to. The order cites the verdict ID.
 5. Every step is a ledger row under one decision ID. Rejected and vetoed plans are
    followed by the counterfactual tracker to the exit they would have had.
 
+Votes stay valid until their timeframe's next close, so at any close the ensemble sees
+every vote still valid across timeframes: an H1 and an H4 strategy can form one plan. A
+plan forms only when a vote is fresh at this close; its entry fills at the next bar of the
+base (finest) timeframe.
+
+Agent requests are veto, shrink, close and flag (``tradex.core.actions``); agents run in
+shadow, recording what they would have done, until ``agents.mode`` is active.
+
 Marks come from MarketData and FX rates from a rate source; in paper and live a missing
-mark or rate blocks the trade (Health row) instead of being estimated. Once per New York
-day the core writes an equity snapshot per book.
+mark, rate or spread blocks the trade instead of being estimated. Every fault (missing
+data, broker error, refused order, a symbol whose step failed) is a Health row with
+ok=False, which Telegram sends loud. Once per New York day the core writes an equity
+snapshot per book.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from tradex.backtest.engine import _policy_from_spec
+from tradex.core.actions import AgentDesk, shrink_qty
 from tradex.core.counterfactual import CounterfactualTracker
-from tradex.core.interfaces import Broker, BrokerFill, Clock, MarketData, OrderRequest
+from tradex.core.interfaces import Broker, BrokerFill, BrokerPosition, Clock, MarketData, OrderRequest
 from tradex.core.ledger import Ledger
 from tradex.core.records import (Close, DecisionIds, EquitySnapshot, ExitChange, Fill, Health, Order, TradePlan,
                                  Veto, Vote)
-from tradex.costs.models import model_for, next_rollover, split_pair
+from tradex.costs.models import CostModel, RateMissing, model_for, next_rollover, split_pair
+from tradex.data.guard import RealDataMissing
 from tradex.decision.ensemble import DEFAULT_HIT_RATE, PlanRules, finalise
 from tradex.events import EventCalendar
 from tradex.execution.checks import SanityPolicy, ShortInfo, ShortPolicy, sanity_check, short_check
@@ -79,6 +92,7 @@ class CoreConfig:
     mode: str = "replay"                          # backtest | replay | paper | live
     signal_window_mult: int = 3                   # rolling signal window, in strategy lookbacks
     margin_rates: dict[str, float] = field(default_factory=lambda: dict(MARGIN_RATES))  # conservative: 20:1 fx, cash stocks
+    agents_mode: str = "shadow"                   # shadow: inbox actions are recorded, not applied
 
     @property
     def live(self) -> bool:
@@ -103,7 +117,8 @@ class TradingCore:
     def __init__(self, strategies: list[StrategySpec], data: MarketData, clock: Clock, ledger: Ledger,
                  gate: RiskGate, brokers: dict[str, Broker] | None = None, rates: RateSource | None = None,
                  calendar: EventCalendar | None = None, short_info: dict[str, ShortInfo] | None = None,
-                 cfg: CoreConfig | None = None, symbols: list[str] | None = None, base_tf: str | None = None):
+                 cfg: CoreConfig | None = None, symbols: list[str] | None = None, base_tf: str | None = None,
+                 costs: dict[str, CostModel] | None = None):
         self.cfg = cfg or CoreConfig()
         self.strategies = [s for s in strategies if s.status not in INACTIVE]
         self.data, self.clock, self.ledger, self.gate = data, clock, ledger, gate
@@ -116,7 +131,7 @@ class TradingCore:
                                      require_known_borrow=not self.cfg.simulation or self.cfg.live)
         self.sanity_pol = SanityPolicy(**pol.get("sanity", {}))
         self.tier = int(pol["book"].get("start_tier", 2))
-        self.costs = {"stocks": model_for("stocks"), "forex": model_for("forex")}
+        self.costs = costs or {"stocks": model_for("stocks"), "forex": model_for("forex")}
         self.ids = DecisionIds()
         self.paused = False
         self.tfs = sorted({s.signal_tf for s in self.strategies}, key=duration)
@@ -142,6 +157,11 @@ class TradingCore:
         self._last_snap_day = None
         self._last_begin: pd.Timestamp | None = None
         self._config_set = False
+        self._held: dict[tuple[str, str], tuple[Vote, pd.Timestamp]] = {}   # (symbol, strategy) -> vote, valid until
+        self._entries: dict[str, tuple[OrderRequest, TradePlan]] = {}      # ensemble entries maybe unfilled
+        self._place_err = ""
+        self._resized: dict[str, int] = {}
+        self.desk = AgentDesk(self, self.cfg.agents_mode)
 
     def _sim(self, book: str, cash: float) -> SimBroker:
         return SimBroker(cash, self.costs, bar=self.bar, book=book, rate_fn=self.rates.usd_per_unit)
@@ -162,9 +182,23 @@ class TradingCore:
                 todo.append((sym, b.iloc[-1]))
         if not todo:
             return
-        self._begin(ts)
-        for sym, bar in todo:
-            self._step(sym, tf, ts, bar)
+        if not self._config_set:
+            self.ledger.set_config(ts.isoformat(), "config/risk/policy.yaml", self.gate.policy)
+            self._config_set = True
+        for sym, bar in todo:                     # the bar that just closed: fills, stops, targets
+            self._guarded(self._fills_step, sym, tf, ts, bar)
+        self._begin(ts)                           # then commands and agent requests made during it
+        for sym, bar in todo:                     # then reviews, votes and plans at this close
+            self._guarded(self._step, sym, tf, ts, bar)
+
+    def _guarded(self, fn, sym: str, tf: str, ts: pd.Timestamp, bar: pd.Series) -> None:
+        if not self.cfg.live:
+            fn(sym, tf, ts, bar)
+            return
+        try:                                      # in paper/live one bad symbol must not stop the others
+            fn(sym, tf, ts, bar)
+        except Exception as exc:  # noqa: BLE001
+            self._health("core", False, f"{sym} {tf} close {ts.isoformat()}: {type(exc).__name__}: {exc}", ts)
 
     def finish(self, t: pd.Timestamp) -> dict[str, Any]:
         """End of a replay: close out the counterfactuals and write final snapshots."""
@@ -177,31 +211,39 @@ class TradingCore:
         if ts == self._last_begin:
             return
         self._last_begin = ts
-        if not self._config_set:
-            self.ledger.set_config(ts.isoformat(), "config/risk/policy.yaml", self.gate.policy)
-            self._config_set = True
         self._apply_commands(ts)
+        self.desk.ingest(ts)
         self._maybe_snapshot(ts)
 
-    def _step(self, sym: str, tf: str, close_t: pd.Timestamp, bar: pd.Series) -> None:
+    def _fills_step(self, sym: str, tf: str, close_t: pd.Timestamp, bar: pd.Series) -> None:
         o, h, l, c = (float(bar[k]) for k in ("open", "high", "low", "close"))
         if tf == self.base_tf:
-            for br in self.brokers.values():
+            for book, br in self.brokers.items():
                 if getattr(br, "simulated", False):
-                    br.on_bar(sym, close_t - self.bar, o, h, l, c)
+                    try:
+                        br.on_bar(sym, close_t - self.bar, o, h, l, c)
+                    except (LookupError, RateMissing) as exc:   # no live rate or spread: nothing is guessed
+                        self._health("data", False, f"{book} {sym} bar not processed: {exc}", close_t)
         for book, br in self.brokers.items():
-            self._record_fills(book, br, sym)
+            self._record_fills(book, br, sym, close_t)
         if tf == self.base_tf:
             for rec in self.cf.on_bar(sym, close_t, h, l, c):
                 self.ledger.append(rec)
+
+    def _step(self, sym: str, tf: str, close_t: pd.Timestamp, bar: pd.Series) -> None:
+        c = float(bar["close"])
         for book, br in self.brokers.items():
             self._review_positions(book, br, sym, tf, close_t, c)
         votes = self._votes(sym, tf, close_t)
         if not votes:
             return
-        qualified = [v for v in votes if self.spec_by_id[v.strategy_id].status in self.cfg.qualified_statuses]
+        for v in votes:
+            self._held[(sym, v.strategy_id)] = (v, close_t + duration(tf))
+        ok = lambda v: self.spec_by_id[v.strategy_id].status in self.cfg.qualified_statuses  # noqa: E731
+        qualified = [v for v in votes if ok(v)]
         if qualified and not self.paused and not self._busy("ensemble", sym):
-            self._decide("ensemble", qualified, self.rules, close_t, tf)
+            held = [v for v in self._held_votes(sym, close_t, {v.strategy_id for v in votes}) if ok(v)]
+            self._decide("ensemble", qualified + held, self.rules, close_t, tf)
         if self.cfg.virtual_books:
             single = PlanRules(1, 0.0, 1.0, self.rules.min_reward_risk)
             for v in votes:
@@ -211,9 +253,16 @@ class TradingCore:
 
     # --- fills and closes, from any venue ----------------------------------------------
 
-    def _record_fills(self, book: str, br: Broker, sym: str) -> None:
+    def _record_fills(self, book: str, br: Broker, sym: str, t: pd.Timestamp) -> None:
         since, seen = self._cursor.get((book, sym), (None, set()))
-        new = [f for f in br.fills(since) if f.symbol == sym and f.fill_id not in seen]
+        try:
+            got = br.fills(since)
+        except Exception as exc:  # noqa: BLE001 - a venue outage is a fault, not a crash, in paper/live
+            if not self.cfg.live:
+                raise
+            self._health("broker", False, f"{book} fills: {type(exc).__name__}: {exc}", t)
+            return
+        new = [f for f in got if f.symbol == sym and f.fill_id not in seen]
         if not new:
             return
         last = max(f.time for f in new)
@@ -283,24 +332,36 @@ class TradingCore:
                             asset_class=s.asset_class, direction=d,
                             strength=float(s.stats.get("hit_rate", DEFAULT_HIT_RATE)), entry_ref=c,
                             stop=c - d * stop_dist, targets=[c + d * s.exit.target_r * stop_dist],
-                            max_bars=s.exit.max_bars, knowable_at=ct))
+                            max_bars=s.exit.max_bars, knowable_at=ct, tf=tf))
+        return out
+
+    def _held_votes(self, sym: str, close_t: pd.Timestamp, fresh: set[str]) -> list[Vote]:
+        """Votes of other strategies on ``sym`` still inside their validity window, in strategy order."""
+        out = []
+        for s in self.strategies:
+            hit = self._held.get((sym, s.id))
+            if s.id not in fresh and hit is not None and hit[1] > close_t:
+                out.append(hit[0])
         return out
 
     def _decide(self, book: str, votes: list[Vote], rules: PlanRules, close_t: pd.Timestamp, tf: str) -> None:
         br = self.brokers[book]
         did = self.ids.next(close_t)
-        plan, why = finalise(votes, did, rules, self.costs[votes[0].asset_class], self.cfg.family_weights, book)
+        try:
+            plan, why = finalise(votes, did, rules, self.costs[votes[0].asset_class], self.cfg.family_weights, book)
+        except (RateMissing, RealDataMissing) as exc:      # no live spread to cost the plan: no plan
+            self._health("data", False, f"{did} {votes[0].symbol}: {exc}", close_t)
+            return
         if plan is None:
             return
         self.ledger.append(plan)
         for v in votes:
-            v.decision_id, v.book = did, book
-            self.ledger.append(v)
+            self.ledger.append(replace(v, decision_id=did, book=book))
         if why:
             self._block(plan, "plan", why, close_t)
             return
         # gate 3: context, subtract only
-        hold_end = close_t + duration(tf) * plan.max_bars
+        hold_end = close_t + duration(plan.tf or tf) * plan.max_bars
         veto, factor, _ = self.calendar.check(plan.symbol, plan.asset_class, close_t, hold_end)
         if veto:
             self._block(plan, "calendar", veto, close_t)
@@ -309,6 +370,12 @@ class TradingCore:
         if sv:
             self._block(plan, "short_check", sv, close_t)
             return
+        factor = 1.0
+        if book == "ensemble":
+            rule, factor = self.desk.at_gate(plan, close_t)
+            if rule is not None:
+                self._block(plan, f"agent:{rule.source}", rule.reason, close_t)
+                return
         # gate 4: size, from live equity, marks and rates; anything missing blocks
         try:
             bu = self._bu(plan.symbol, plan.asset_class, close_t)
@@ -319,7 +386,7 @@ class TradingCore:
             venue = br.venue_for(plan.asset_class) if hasattr(br, "venue_for") else br
             q_margin, margin = margin_max_qty(venue, self.rates, close_t, self.cfg.margin_rates[plan.asset_class],
                                               plan.entry_price * bu)
-        except (MissingRate, MissingData) as exc:
+        except (MissingRate, MissingData, RateMissing, RealDataMissing) as exc:
             self._health("data", False, f"{did}: {exc}", close_t)
             self._block(plan, "data", str(exc), close_t)
             return
@@ -338,22 +405,39 @@ class TradingCore:
         if insane:
             self._block(plan, "sanity", insane, close_t)
             return
+        qty = verdict.qty if factor >= 1.0 else shrink_qty(verdict.qty, factor)
+        if qty <= 0:
+            self._block(plan, "agent", f"agent shrink {factor:g} leaves no size", close_t)
+            return
         side = plan.direction
-        req = OrderRequest(f"{did}-entry", did, plan.symbol, plan.asset_class, side, verdict.qty, "market", None,
+        req = OrderRequest(f"{did}-entry", did, plan.symbol, plan.asset_class, side, qty, "market", None,
                            plan.stop, plan.targets[0], "entry", book, verdict_id=verdict.verdict_id)
         if not self._place(book, br, req, close_t):
-            self._block(plan, "order_guard", "order refused", close_t)
+            self._block(plan, self._place_err, "order refused" if self._place_err == "order_guard" else
+                        "broker error", close_t)
             return
-        self.ledger.append(Order(did, req.client_order_id, close_t.isoformat(), plan.symbol, side, verdict.qty,
-                                 "market", None, "entry", book))
-        self.meta[(book, did)] = _Meta(plan.strategies[0], abs(plan.entry_price - plan.stop), plan.max_bars,
+        self.ledger.append(Order(did, req.client_order_id, close_t.isoformat(), plan.symbol, side, qty,
+                                 "market", None, "entry" if factor >= 1.0 else f"entry: agent shrink {factor:g}",
+                                 book))
+        # the finest-timeframe agreeing strategy manages the position: its bars count the time stop
+        mgr = next((s for s in plan.strategies if self.spec_by_id[s].signal_tf == plan.tf), plan.strategies[0])
+        self.meta[(book, did)] = _Meta(mgr, abs(plan.entry_price - plan.stop), plan.max_bars,
                                        plan.targets[0], list(plan.targets), plan.stop)
+        if book == "ensemble":
+            self._entries[did] = (req, plan)
 
     def _place(self, book: str, br: Broker, req: OrderRequest, t: pd.Timestamp) -> bool:
         try:
             br.place(req)
         except OrderRefused as exc:
             self._health("order_guard", False, str(exc), t)
+            self._place_err = "order_guard"
+            return False
+        except Exception as exc:  # noqa: BLE001 - a venue error is a fault in paper/live; a bug elsewhere
+            if not self.cfg.live:
+                raise
+            self._health("broker", False, f"{req.client_order_id}: {type(exc).__name__}: {exc}", t)
+            self._place_err = "broker"
             return False
         self._orders.setdefault(book, {})[req.client_order_id] = req.symbol
         return True
@@ -381,7 +465,7 @@ class TradingCore:
             atr = sp.atr if sp is not None and np.isfinite(sp.atr) else 0.0
             try:
                 bu = self._bu(sym, p.asset_class, close_t)
-            except MissingRate as exc:
+            except (MissingRate, RateMissing) as exc:
                 self._health("fx_rate", False, f"review {p.decision_id}: {exc}", close_t)
                 continue
             op = OpenPosition(sym, p.asset_class, m.strategy_id, p.direction, p.qty, p.entry_time, p.entry_price,
@@ -467,15 +551,81 @@ class TradingCore:
             elif name == "resume":
                 self.paused, res = False, "entries allowed"
             elif name == "flatten":
-                br = self.brokers["ensemble"]
-                for p in br.positions():
-                    self._place("ensemble", br, OrderRequest(f"{p.decision_id}-flatten", p.decision_id, p.symbol,
-                                                             p.asset_class, -p.direction, p.qty, "market",
-                                                             purpose="exit"), t)
-                self.paused, res = True, f"closing {len(br.positions())} positions at the next open; paused"
+                cancelled = [d for d in self.pending_entries() if self.cancel_entry(d, "command", "flatten", t)]
+                pos = self.agent_positions()
+                sent = sum(self.exit_position(p, p.qty, t, "flatten command", f"{p.decision_id}-flatten")
+                           for p in pos)
+                self.paused = True
+                res = (f"cancelled {len(cancelled)} unfilled entries; exits sent for {sent} of {len(pos)} "
+                       f"positions; paused")
             else:
                 res = "unknown command"
             self.ledger.mark_command(cmd["id"], t.isoformat(), res)
+
+    # --- what commands and agents act through (ensemble book only) ---------------------------
+
+    def health(self, check: str, ok: bool, detail: str, t: pd.Timestamp | None = None) -> None:
+        """For the runtime around the core (feed, scheduler): faults go into the same chain."""
+        self._health(check, ok, detail, t if t is not None else self.clock.now())
+
+    def pending_entries(self, symbol: str | None = None) -> list[str]:
+        """Decision IDs whose ensemble entry order is still unfilled."""
+        br, out = self.brokers["ensemble"], []
+        for did, (req, _) in list(self._entries.items()):
+            if not br.order_status(req.client_order_id).open:
+                del self._entries[did]
+            elif symbol is None or req.symbol == symbol:
+                out.append(did)
+        return out
+
+    def entry_qty(self, did: str) -> float:
+        return self._entries[did][0].qty
+
+    def cancel_entry(self, did: str, source: str, reason: str, t: pd.Timestamp) -> bool:
+        req, plan = self._entries[did]
+        if not self.brokers["ensemble"].cancel(req.client_order_id):
+            return False
+        del self._entries[did]
+        self.meta.pop(("ensemble", did), None)
+        self._block(plan, source, reason, t)
+        return True
+
+    def resize_entry(self, did: str, qty: float, t: pd.Timestamp, why: str) -> bool:
+        """Cancel an unfilled entry and re-place it smaller under the same verdict (never larger)."""
+        req, plan = self._entries[did]
+        if qty >= req.qty:
+            return False
+        if qty <= 0:
+            return self.cancel_entry(did, "agent", why, t)
+        br = self.brokers["ensemble"]
+        if not br.cancel(req.client_order_id):
+            return False
+        n = self._resized[did] = self._resized.get(did, 0) + 1
+        new = replace(req, client_order_id=f"{did}-entry-r{n}", qty=qty)
+        if not self._place("ensemble", br, new, t):
+            del self._entries[did]
+            self.meta.pop(("ensemble", did), None)
+            self._block(plan, self._place_err, f"resize to {qty:g} refused", t)
+            return True
+        self._entries[did] = (new, plan)
+        self.ledger.append(Order(did, new.client_order_id, t.isoformat(), req.symbol, req.side, qty, "market", None,
+                                 f"entry: {why}", "ensemble"))
+        return True
+
+    def agent_positions(self, target: str | None = None) -> list[BrokerPosition]:
+        """Open agent positions of the ensemble book, all or for one decision ID or symbol."""
+        return [p for p in self.brokers["ensemble"].positions()
+                if target is None or target in (p.decision_id, p.symbol)]
+
+    def exit_position(self, p: BrokerPosition, qty: float, t: pd.Timestamp, why: str, coid: str) -> bool:
+        """A reducing exit through the broker (and the order guard behind it)."""
+        req = OrderRequest(coid, p.decision_id, p.symbol, p.asset_class, -p.direction, min(qty, p.qty), "market",
+                           purpose="exit", book="ensemble")
+        if not self._place("ensemble", self.brokers["ensemble"], req, t):
+            return False
+        self.ledger.append(Order(p.decision_id, coid, t.isoformat(), p.symbol, -p.direction, req.qty, "market", None,
+                                 f"exit: {why}", "ensemble"))
+        return True
 
     def _maybe_snapshot(self, close_t: pd.Timestamp) -> None:
         day = close_t.tz_convert(NY).date()

@@ -1,0 +1,14 @@
+# Paper/live runtime switches. Read by `tradex run` (tradex/runtime/config.py).
+agents:
+  # shadow | active. In shadow, agent veto/shrink/close requests are recorded with what they
+  # WOULD have done and nothing is applied. Plan: 60 trading days of scored shadow rows
+  # before Ray switches this to active.
+  mode: shadow
+
+feed:
+  stale_after_s: 120      # Oanda stream silent (no tick, no heartbeat) this long while forex trades -> FAULT
+  quote_max_age_s: 30     # a quote older than this is not used for rates or spreads
+
+scheduler:
+  grace_s: 5              # wait this long after a bar boundary for the bar to arrive
+  overrun_s: 60           # one close taking longer than this -> FAULT
