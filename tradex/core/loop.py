@@ -558,6 +558,8 @@ class TradingCore:
                 self.paused = True
                 res = (f"cancelled {len(cancelled)} unfilled entries; exits sent for {sent} of {len(pos)} "
                        f"positions; paused")
+            elif name == "go_live_approved":
+                res = "recorded for the readiness scorecard; switches nothing"
             else:
                 res = "unknown command"
             self.ledger.mark_command(cmd["id"], t.isoformat(), res)
