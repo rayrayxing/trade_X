@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import statistics
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -85,6 +86,21 @@ class TrialLedger:
         with self._conn() as c:
             return int(c.execute("SELECT COUNT(DISTINCT params_hash) FROM trials WHERE strategy_id = ?",
                                  (strategy_id,)).fetchone()[0])
+
+    def sharpe_variance(self, strategy_id: str) -> float:
+        """Variance of the per-period Sharpe across the distinct parameter sets ever tried (the
+        DSR's V, matching ``count``'s N). Within each training window the latest Sharpe of each
+        parameter set is compared; the windows' variances are averaged. 0.0 when no window holds
+        two or more parameter sets, so callers must not read 0.0 as "no spread"."""
+        with self._conn() as c:
+            rows = c.execute("SELECT window_start, window_end, params_hash, sharpe FROM trials "
+                             "WHERE strategy_id = ? AND sharpe IS NOT NULL AND window_start IS NOT NULL "
+                             "ORDER BY id", (strategy_id,)).fetchall()
+        groups: dict[tuple[str, str], dict[str, float]] = {}
+        for ws, we, ph, sr in rows:
+            groups.setdefault((ws, we), {})[ph] = float(sr)          # later rows overwrite earlier ones
+        vs = [statistics.variance(g.values()) for g in groups.values() if len(g) > 1]
+        return float(statistics.fmean(vs)) if vs else 0.0
 
     def runs(self, strategy_id: str) -> int:
         with self._conn() as c:
