@@ -12,6 +12,7 @@ runs the call on a thread so the core can keep trading.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import threading
@@ -86,19 +87,32 @@ class GatewayError(Exception):
     pass
 
 
-def _build(kind: str, base: str, key: str, model: str, system: str, prompt: str, max_tokens: int):
+def _b64(png: bytes) -> str:
+    return base64.b64encode(png).decode()
+
+
+def _build(kind: str, base: str, key: str, model: str, system: str, prompt: str, max_tokens: int,
+           images: tuple[bytes, ...] = ()):
+    """``images`` are PNG bytes (chart reader); they go before the text, in order."""
     if kind == "openai_compat":
-        msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+        user: Any = prompt if not images else (
+            [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + _b64(i)}} for i in images]
+            + [{"type": "text", "text": prompt}])
+        msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": user}]
         return (base.rstrip("/") + "/chat/completions", {"authorization": f"Bearer {key}"},
                 {"model": model, "messages": msgs, "max_tokens": max_tokens})
     if kind == "anthropic":
         body: dict[str, Any] = {"model": model, "max_tokens": max_tokens,
-                                "messages": [{"role": "user", "content": prompt}]}
+                                "messages": [{"role": "user", "content": prompt if not images else (
+                                    [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                                  "data": _b64(i)}} for i in images]
+                                    + [{"type": "text", "text": prompt}])}]}
         if system:
             body["system"] = system
         return (base.rstrip("/") + "/v1/messages", {"x-api-key": key, "anthropic-version": "2023-06-01"}, body)
     if kind == "google":
-        body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        body = {"contents": [{"role": "user", "parts": [{"inline_data": {"mime_type": "image/png", "data": _b64(i)}}
+                                                           for i in images] + [{"text": prompt}]}],
                 "generationConfig": {"maxOutputTokens": max_tokens}}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
@@ -149,14 +163,15 @@ class Gateway:
             raise GatewayError(f"unknown category {category}")
         return [(c["route"], c["model"])] + [(f["route"], f["model"]) for f in c.get("fallbacks", [])]
 
-    def _attempt(self, route: str, model: str, system: str, prompt: str, max_tokens: int, timeout: float):
+    def _attempt(self, route: str, model: str, system: str, prompt: str, max_tokens: int, timeout: float,
+                 images: tuple[bytes, ...] = ()):
         r = self.cfg["routes"][route]
         try:
             key = self.secret(r["key_secret"])
             base = self.secret(r["base_url_secret"]) if "base_url_secret" in r else r["base_url"]
         except Exception:  # noqa: BLE001 - missing secret: skip this route
             raise GatewayError("secret missing") from None
-        url, hdrs, body = _build(r["kind"], base, key, model, system, prompt, max_tokens)
+        url, hdrs, body = _build(r["kind"], base, key, model, system, prompt, max_tokens, images)
         resp = self.http(url, {"content-type": "application/json", **hdrs}, body, timeout)
         if resp.status >= 400:
             raise GatewayError(f"http {resp.status}")
@@ -165,15 +180,18 @@ class Gateway:
             raise GatewayError("empty response")
         return text, answered or model, infer_provider(answered, resp.headers, route), tin, tout
 
-    def call(self, category: str, prompt: str, system: str = "", max_tokens: int = 1024) -> AgentResult:
-        """Never raises. On failure returns ok=False and logs the skip."""
+    def call(self, category: str, prompt: str, system: str = "", max_tokens: int = 1024,
+             images: list[bytes] | None = None) -> AgentResult:
+        """Never raises. On failure returns ok=False and logs the skip. ``images``: PNG bytes."""
+        imgs = tuple(images or ())
+        logged = prompt + system + "".join(hashlib.sha256(i).hexdigest() for i in imgs)  # hash covers the pixels
         start = self.clock()
         res = AgentResult(False, category)
         try:
             plan = self.plan(category)
         except GatewayError as exc:
             res.error = str(exc)
-            self._log(res, prompt)
+            self._log(res, logged)
             return res
         for route, model in plan:
             left = self.budget - (self.clock() - start)
@@ -183,7 +201,7 @@ class Gateway:
             t0 = self.clock()
             try:
                 text, answered, prov, tin, tout = self._attempt(route, model, system, prompt, max_tokens,
-                                                                min(self.timeout, left))
+                                                                min(self.timeout, left), imgs)
                 ms = int((self.clock() - t0) * 1000)
                 res.attempts.append({"route": route, "model": model, "ok": True, "ms": ms})
                 res.ok, res.text, res.route, res.model, res.provider = True, text, route, answered, prov
@@ -197,7 +215,7 @@ class Gateway:
         if not res.ok:
             res.error = "skipped: " + "; ".join(f"{a['route']} {a.get('error')}" for a in res.attempts)
             res.latency_ms = int((self.clock() - start) * 1000)
-        self._log(res, prompt + system, res.text)
+        self._log(res, logged, res.text)
         return res
 
     def submit(self, category: str, prompt: str, on_done: Callable[[AgentResult], None] | None = None,

@@ -136,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     cm.add_argument("name", choices=["pause", "resume", "flatten"])
     cm.add_argument("--ledger", default="data/ledger/live.sqlite")
 
+    rd = sub.add_parser("readiness", help="live-gate scorecard: pass / fail / unknown per criterion, with evidence")
+    rd.add_argument("--ledger", default="data/ledger/live.sqlite")
+    rd.add_argument("--gate-results", default="research/results/phase1_gate.json")
+
     st = sub.add_parser("setup", help="store secrets in the macOS Keychain (hidden prompts)")
     st.add_argument("--only", nargs="+", metavar="NAME")
     st.add_argument("--status", action="store_true", help="print set/missing per secret and exit")
@@ -147,6 +151,14 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "opend-check":
         from tradex.data.opend_check import run
         return run()
+    if a.cmd == "readiness":
+        from tradex.core.ledger import Ledger
+        from tradex.readiness_evidence import render, scorecard
+        if not Path(a.ledger).exists():
+            raise SystemExit(f"no ledger at {a.ledger}")
+        outs = scorecard(Ledger(a.ledger, read_only=True), a.gate_results)
+        print(render(outs))
+        return 0 if all(o.status == "pass" for o in outs) else 1
     if a.cmd == "setup":
         from tradex.setup_cmd import run_setup
         return run_setup(a.only, a.status)

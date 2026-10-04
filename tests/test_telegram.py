@@ -153,3 +153,24 @@ def test_service_cannot_append_chain(tmp_path):
     import sqlite3
     with pytest.raises(sqlite3.DatabaseError):
         svc.mb.db.execute("DELETE FROM events")
+
+
+def test_approve_live_needs_confirm_and_counts_on_scorecard(tmp_path):
+    from tradex.readiness_evidence import scorecard
+    led, f, clock, svc = mk(tmp_path)
+    f.updates = [msg("/approve_live")]
+    svc.poll_once()
+    assert list(led.db.execute("SELECT * FROM commands")) == []
+    approve = f.sent[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    f.updates = [cb(approve.replace("approve_live", "flatten"), n=11)]   # a forged action is not this tap
+    svc.poll_once()
+    assert list(led.db.execute("SELECT * FROM commands")) == []
+    f.updates = [msg("/approve_live", n=12)]
+    svc.poll_once()
+    approve = f.sent[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    f.updates = [cb(approve, n=13)]
+    svc.poll_once()
+    rows = [(r["source"], r["command"], r["args"]) for r in led.db.execute("SELECT * FROM commands")]
+    assert rows == [("telegram", "go_live_approved", '{"by": "ray"}')]
+    go = {o.id: o for o in scorecard(led, tmp_path / "none.json")}["ray_go_ahead"]
+    assert go.value == 1
