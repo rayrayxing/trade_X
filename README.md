@@ -25,7 +25,7 @@ environment variables on the machine that runs them.
 | `tradex/core` | The spine: record types, the hash-chained SQLite ledger, Clock / MarketData / Broker interfaces with replay versions, the trading core loop, the counterfactual ledger and the replay harness |
 | `tradex/decision` | Ensemble: family votes become one finalised trade plan (entry, stop, targets, time stop) before any risk review |
 | `tradex/events.py` | Event calendar (central banks, CPI, NFP, earnings, forex weekend) with blackout windows |
-| `tradex/execution` | Simulated broker (next-open fills, brackets, idempotent order IDs, read-only external holdings) and pre-trade short and sanity checks. Protected |
+| `tradex/execution` | Simulated broker (next-open fills, brackets, idempotent order IDs, read-only external holdings), pre-trade short and sanity checks, and the order guard every venue adapter submits through (verdict ID, size within verdict, agent-owned account from `config/accounts.yaml`). Protected |
 | `tradex/risk/exposure.py`, `gate.py` | Net open position per currency, expected shortfall with marginal charging, named stress replays, and the risk gate that sizes plans. Protected |
 | `config/risk`, `config/gates` | Risk policy and promotion gate thresholds. Protected |
 | `strategies/seeds` | 8 seed strategies (3 forex, 5 stocks) |
