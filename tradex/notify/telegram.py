@@ -4,9 +4,11 @@
 - Alerts are rendered from ledger rows (order, fill, close, block, fault). Each row is
   claimed in ``telegram_sent`` before it is sent, so a restart or a second poll never
   sends the same row twice; a failed send releases the claim and is retried.
-- Commands (/pause /resume /status /flatten) are written to the ``commands`` table through
-  ``Mailbox`` and applied by the core on its next bar. This process cannot append to the
-  ledger chain. /flatten needs a confirm tap that expires after 60 s.
+- Commands (/pause /resume /status /flatten /approve_live) are written to the ``commands``
+  table through ``Mailbox`` and applied by the core on its next bar. This process cannot
+  append to the ledger chain. /flatten and /approve_live need a confirm tap that expires
+  after 60 s. /approve_live records Ray's go-live approval, the only source the readiness
+  scorecard accepts (Ray, 4 Oct 2026); it does not switch anything to live by itself.
 - Quiet hours 23:00-07:30 Asia/Singapore: trade alerts are silent, faults are always loud.
 """
 from __future__ import annotations
@@ -32,6 +34,14 @@ CREATE TABLE IF NOT EXISTS telegram_kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 ALERT_KINDS = ("order", "fill", "close", "veto", "verdict", "health")
 CONFIRM_TTL_S = 60
+# command -> (button, question, (commands row, args, reply)); each needs a confirm tap
+CONFIRMED = {
+    "flatten": ("Confirm flatten", "Close ALL positions and pause?",
+                ("flatten", None, "Flatten queued (command {cid}); the core closes positions on its next bar.")),
+    "approve_live": ("Approve live trading", "Record your go-ahead for live trading? It counts on the "
+                     "readiness scorecard; nothing goes live until every other criterion passes.",
+                     ("go_live_approved", {"by": "ray"}, "Go-live approval recorded (command {cid}).")),
+}
 QUIET_START, QUIET_END = time(23, 0), time(7, 30)
 try:
     from zoneinfo import ZoneInfo
@@ -106,7 +116,7 @@ class TelegramService:
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.poll_timeout = poll_timeout
         self.mb = Mailbox(ledger_path, extra_schema=SCHEMA, extra_writable=("telegram_sent", "telegram_kv"))
-        self.pending_flatten: dict[str, float] = {}      # token -> expiry (monotonic-free: epoch seconds)
+        self.pending: dict[str, tuple[str, float]] = {}  # token -> (action, expiry in epoch seconds)
         self.dropped = 0
         if not backfill:
             self._baseline()
@@ -168,22 +178,24 @@ class TelegramService:
             self._reply(f"{name} queued (command {cid}); the core applies it on its next bar.")
         elif name == "status":
             self._reply(self._status())
-        elif name == "flatten":
+        elif name in CONFIRMED:
             tok = _rand.token_hex(4)
-            self.pending_flatten[tok] = self.now().timestamp() + CONFIRM_TTL_S
-            kb = {"inline_keyboard": [[{"text": "Confirm flatten", "callback_data": f"flatten:{tok}"},
+            self.pending[tok] = (name, self.now().timestamp() + CONFIRM_TTL_S)
+            button, question, _ = CONFIRMED[name]
+            kb = {"inline_keyboard": [[{"text": button, "callback_data": f"{name}:{tok}"},
                                        {"text": "Cancel", "callback_data": f"cancel:{tok}"}]]}
-            self._reply(f"Close ALL positions and pause? Confirm within {CONFIRM_TTL_S} s.", reply_markup=kb)
+            self._reply(f"{question} Confirm within {CONFIRM_TTL_S} s.", reply_markup=kb)
 
     def _callback(self, cq: dict[str, Any]) -> None:
         stamp = self.now()
         action, _, tok = (cq.get("data") or "").partition(":")
-        exp = self.pending_flatten.pop(tok, None)
-        if exp is None or stamp.timestamp() > exp:
-            text = "Expired or already used. Send /flatten again."
-        elif action == "flatten":
-            cid = self.mb.add_command(stamp.isoformat(), "telegram", "flatten")
-            text = f"Flatten queued (command {cid}); the core closes positions on its next bar."
+        want, exp = self.pending.pop(tok, (None, 0.0))
+        if want is None or stamp.timestamp() > exp:
+            text = f"Expired or already used. Send /{want or 'the command'} again."
+        elif action == want:
+            command, args, done = CONFIRMED[want][2]
+            cid = self.mb.add_command(stamp.isoformat(), "telegram", command, args)
+            text = done.format(cid=cid)
         else:
             text = "Cancelled."
         self.t.call("answerCallbackQuery", {"callback_query_id": cq["id"], "text": text})
@@ -207,7 +219,7 @@ class TelegramService:
         text = (msg.get("text") or "").strip()
         if text.startswith("/"):
             name = text.split()[0][1:].split("@")[0].lower()
-            if name in ("pause", "resume", "status", "flatten"):
+            if name in ("pause", "resume", "status", *CONFIRMED):
                 self._cmd(name)
 
     def poll_once(self) -> int:
