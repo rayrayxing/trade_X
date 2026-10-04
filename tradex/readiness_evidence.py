@@ -18,7 +18,7 @@ from tradex.core.ledger import Ledger
 
 GATE_RESULTS = Path(__file__).resolve().parents[1] / "research" / "results" / "phase1_gate.json"
 GO_COMMAND = "go_live_approved"
-GO_SOURCES = ("telegram", "cli")          # never dashboard or an agent
+GO_SOURCES = ("telegram",)               # Ray, 4 Oct 2026: Telegram only; never cli, dashboard or an agent
 GO_USER = "ray"
 VENUES = {"forex": "oanda", "stocks": "moomoo"}
 REAL_RUNS = ("paper", "live")

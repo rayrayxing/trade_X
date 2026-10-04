@@ -42,6 +42,6 @@ criteria:
     real_data_only: true
   - id: ray_go_ahead
     description: Ray's explicit go-ahead
-    evidence: {source: "commands command=go_live_approved source=dashboard", metric: approvals}
+    evidence: {source: "commands command=go_live_approved source=telegram", metric: approvals}
     threshold: {min: 1}
     real_data_only: true

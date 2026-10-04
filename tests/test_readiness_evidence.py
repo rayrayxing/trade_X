@@ -107,8 +107,8 @@ def test_strategies_from_gate_file_and_go_ahead(tmp_path):
     led.add_command(T, "telegram", "pause", {"by": "ray"})
     assert by_id(scorecard(led, gate(tmp_path)))["ray_go_ahead"].value == 0
     led.add_command(T, "telegram", "go_live_approved", {"by": "ray"})
-    led.add_command(T, "cli", "go_live_approved", {"by": "ray"})
-    assert by_id(scorecard(led, gate(tmp_path)))["ray_go_ahead"].value == 2
+    led.add_command(T, "cli", "go_live_approved", {"by": "ray"})  # Telegram only
+    assert by_id(scorecard(led, gate(tmp_path)))["ray_go_ahead"].value == 1
 
 
 def test_render_and_cli(tmp_path, capsys):
