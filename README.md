@@ -25,6 +25,8 @@ environment variables on the machine that runs them.
 | `tradex/core` | The spine: record types, the hash-chained SQLite ledger, Clock / MarketData / Broker interfaces with replay versions, the trading core loop, the counterfactual ledger and the replay harness |
 | `tradex/runtime` | Around the core: bar store (live appends, higher timeframes resampled only once closed), FX rate sources that refuse to guess in paper/live, incremental signals |
 | `tradex/decision` | Ensemble: family votes become one finalised trade plan (entry, stop, targets, time stop) before any risk review |
+| `tradex/dashboard` | Read-only web dashboard over the ledger (`tradex dashboard`): Today, Positions, Decisions, Performance, Strategies, Accounts and system, Readiness. Empty ledger shows empty states, never placeholder numbers |
+| `ops/` | launchd plists, installer, nightly restic backup, healthchecks.io dead-man ping and setup notes for Ray's Mac (see `ops/README.md`) |
 | `tradex/events.py` | Event calendar (central banks, CPI, NFP, earnings, forex weekend) with blackout windows |
 | `tradex/execution` | Simulated broker (next-open fills, brackets, idempotent order IDs, read-only external holdings), pre-trade short and sanity checks, and the order guard every venue adapter submits through (verdict ID, size within verdict, agent-owned account from `config/accounts.yaml`). Protected |
 | `tradex/risk/exposure.py`, `gate.py` | Net open position per currency, expected shortfall with marginal charging, named stress replays, and the risk gate that sizes plans. Protected |
