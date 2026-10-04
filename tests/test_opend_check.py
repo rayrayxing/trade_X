@@ -1,6 +1,21 @@
 import json
+import sys
+import types
+
 import pandas as pd
+import pytest
 from tradex.data.opend_check import collect
+
+
+@pytest.fixture(autouse=True)
+def _moomoo_sdk(monkeypatch):
+    """CI installs only `.[dev]`, so the moomoo SDK is absent there; `collect` only needs its RET_OK constant."""
+    try:
+        import moomoo  # noqa: F401
+    except ImportError:
+        fake = types.ModuleType("moomoo")
+        fake.RET_OK = 0
+        monkeypatch.setitem(sys.modules, "moomoo", fake)
 
 
 class Q:

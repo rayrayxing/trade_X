@@ -1,0 +1,46 @@
+--- a/tools/check_protected_paths.py
++++ b/tools/check_protected_paths.py
+@@ -6,8 +6,9 @@
+ config/protected_paths.txt, which is itself protected.
+ 
+ A pull request counts as an agent's when its head branch starts with ``agent/`` (the
+-researcher and strategy designer push there). Changes to protected paths need a commit
+-pushed by Ray on a non-agent branch.
++researcher and strategy designer push there) or ``claude/`` (Claude's build lanes). Changes to
++protected paths need a commit pushed by Ray on a branch of his own: a lane that needs one
++ships it as a patch file under patches/ for Ray to apply.
+ 
+ Usage: check_protected_paths.py --base origin/main --head-ref "$GITHUB_HEAD_REF"
+ Exit 1 and list the offending files when an agent branch touches a protected path.
+@@ -20,7 +21,7 @@
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-AGENT_PREFIXES = ("agent/",)
++AGENT_PREFIXES = ("agent/", "claude/")
+ 
+ 
+ def protected_prefixes(path: Path = ROOT / "config" / "protected_paths.txt") -> list[str]:
+--- a/tests/test_spine.py
++++ b/tests/test_spine.py
+@@ -316,7 +316,9 @@
+     prefixes = mod.protected_prefixes()
+     assert mod.violations(["config/risk/policy.yaml", "tradex/risk/gate.py", "strategies/x.yaml"], prefixes) == \
+         ["config/risk/policy.yaml", "tradex/risk/gate.py"]
+-    assert mod.main(["--head-ref", "claude/feature"]) == 0
++    mod.changed_files = lambda base: ["tradex/risk/gate.py", "README.md"]          # no git needed
++    assert mod.main(["--head-ref", "claude/feature"]) == 1                         # lane branches are checked too
++    assert mod.main(["--head-ref", "feature/docs"]) == 0                           # branches of Ray's own are not
+ 
+ 
+ def test_bundled_calendar_loads_and_vetoes_fomc():
+--- a/tests/test_gaps_safety.py
++++ b/tests/test_gaps_safety.py
+@@ -500,7 +500,6 @@
+ 
+ # --- S7: the protected-path check -----------------------------------------------------------------------------
+ 
+-@known_gap("S7", "tools/check_protected_paths.py only applies to agent/ branches: claude/ lane PRs touch risk files with green CI")
+ def test_s7_protected_path_check_covers_claude_branches(monkeypatch, capsys):
+     import importlib.util
+     spec = importlib.util.spec_from_file_location("check_protected_paths", ROOT / "tools" / "check_protected_paths.py")

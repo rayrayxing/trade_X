@@ -9,3 +9,4 @@ dist/
 data/cache/
 reports/
 data/research/
+.hypothesis/
