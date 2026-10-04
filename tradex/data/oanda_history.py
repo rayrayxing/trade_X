@@ -1,5 +1,7 @@
 """Bulk FX history from Oanda v20 (practice host only): bid/ask candles, CSV-cached.
 
+The only Oanda candle downloader in tradex (tradex.data.oanda.fetch_ba_candles wraps it).
+
 For research: ten years of H1/H4/D bid and ask candles per pair, so backtests can pay the
 spread Oanda actually quoted at each bar instead of a typical-spread guess. Only the
 practice REST host is ever called. The token comes from tradex.secrets (Keychain,
@@ -20,20 +22,18 @@ from typing import Callable, Iterable
 
 import pandas as pd
 
-PRACTICE_HOST = "api-fxpractice.oanda.com"
+from tradex.data.oanda import GRANULARITY, REST_HOST as PRACTICE_HOST, LiveHostRefused, check_host
+
+HostRefused = LiveHostRefused
 DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "oanda"
-GRANULARITY = {"M5": "M5", "M15": "M15", "M30": "M30", "H1": "H1", "H4": "H4", "D1": "D"}
 COLS = ["open", "high", "low", "close", "volume", "bid_open", "bid_high", "bid_low", "bid_close",
         "ask_open", "ask_high", "ask_low", "ask_close"]
 
 
-class HostRefused(RuntimeError):
-    pass
-
-
 def _http_get(url: str, headers: dict[str, str]) -> dict:
     if urllib.parse.urlparse(url).hostname != PRACTICE_HOST:
-        raise HostRefused(f"only the Oanda practice host {PRACTICE_HOST} is allowed, not {url}")
+        raise HostRefused(f"only the Oanda practice REST host {PRACTICE_HOST} is allowed for candles")
+    check_host(url)
     delay = 2.0
     for attempt in range(5):
         try:
