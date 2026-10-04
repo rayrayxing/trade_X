@@ -7,3 +7,4 @@ tradex/risk/
 config/protected_paths.txt
 tools/check_protected_paths.py
 .github/workflows/
+config/accounts.yaml

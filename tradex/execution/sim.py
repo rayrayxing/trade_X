@@ -12,17 +12,23 @@ Fill rules match the backtester so replay and backtest agree:
 - Client order IDs are idempotent: placing the same ID twice returns the first order.
 - Positions tagged ``account="ray"`` are Ray's own holdings: marked to market and counted
   in exposure, never closed or amended.
+- It satisfies the full Broker protocol (fills, order status, account), so the core treats
+  it exactly like a venue adapter. Margin uses the same conservative rates as the core's
+  headroom check (forex 5% = 20:1, stocks 100% = cash account).
+- A missing FX rate never fills an order at a guessed rate: the order waits.
 
 This file is under ``tradex/execution``, a protected path agents cannot change.
 """
 from __future__ import annotations
 
+import itertools
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Callable
 
 import pandas as pd
 
-from tradex.core.interfaces import BrokerFill, BrokerPosition, OrderRequest
+from tradex.core.interfaces import AccountInfo, BrokerFill, BrokerPosition, OrderRequest, OrderStatus
 from tradex.costs.models import CostModel, model_for, split_pair, usd_per_unit
 
 
@@ -52,13 +58,27 @@ class ClosedLot:
     fully_closed: bool
 
 
+MARGIN_RATES = {"forex": 0.05, "stocks": 1.0}
+
+
 class SimBroker:
+    simulated = True                         # the core feeds simulated brokers its bars; venues fill on their own
+
     def __init__(self, initial_cash: float = 10_000.0, costs: dict[str, CostModel] | None = None,
                  fx_rates: dict[str, pd.Series] | None = None, bar: pd.Timedelta = pd.Timedelta(hours=1),
-                 limit_bars: int = 1, book: str = "ensemble"):
+                 limit_bars: int = 1, book: str = "ensemble", account_id: str = "sim",
+                 margin_rates: dict[str, float] | None = None,
+                 rate_fn: Callable[[str, pd.Timestamp], float] | None = None):
         self._cash = float(initial_cash)
         self.costs = costs or {"stocks": model_for("stocks"), "forex": model_for("forex")}
         self.fx_rates = fx_rates
+        self.rate_fn = rate_fn              # USD per unit of a currency; raises LookupError when unknown
+        self.account_id = account_id
+        self.venue = "sim"
+        self.margin_rates = margin_rates or dict(MARGIN_RATES)
+        self._fills: list[BrokerFill] = []
+        self._status: dict[str, OrderStatus] = {}
+        self._fill_seq = itertools.count(1)
         self.bar = bar
         self.limit_bars = limit_bars
         self.book = book
@@ -76,6 +96,7 @@ class SimBroker:
         if req.account != "agent":
             raise PermissionError("the agent never places orders on Ray's own account")
         self.orders[req.client_order_id] = req
+        self._status[req.client_order_id] = OrderStatus(req.client_order_id, "pending")
         self._pending[req.symbol].append((req, 0))
         return req.client_order_id
 
@@ -85,7 +106,10 @@ class SimBroker:
             return False
         before = len(self._pending[req.symbol])
         self._pending[req.symbol] = [(r, n) for r, n in self._pending[req.symbol] if r.client_order_id != client_order_id]
-        return len(self._pending[req.symbol]) < before
+        done = len(self._pending[req.symbol]) < before
+        if done:
+            self._status[client_order_id].status = "cancelled"
+        return done
 
     def amend_stop(self, decision_id: str, stop: float) -> None:
         op = self._open.get(decision_id)
@@ -97,6 +121,24 @@ class SimBroker:
 
     def cash(self) -> float:
         return self._cash
+
+    def fills(self, since: pd.Timestamp | None = None) -> list[BrokerFill]:
+        if since is None:
+            return list(self._fills)
+        i = len(self._fills)
+        while i > 0 and self._fills[i - 1].time >= since:
+            i -= 1
+        return self._fills[i:]
+
+    def order_status(self, client_order_id: str) -> OrderStatus:
+        return self._status.get(client_order_id) or OrderStatus(client_order_id, "unknown")
+
+    def account(self) -> AccountInfo:
+        eq = self.equity()
+        margin = sum(o.pos.qty * self._marks.get(o.pos.symbol, o.pos.entry_price) * o.base_to_usd
+                     * self.margin_rates.get(o.pos.asset_class, 1.0)
+                     for o in self._open.values() if o.pos.account == "agent")
+        return AccountInfo(self.account_id, self.venue, "USD", eq, self._cash, margin, max(0.0, eq - margin))
 
     def equity(self) -> float:
         u = 0.0
@@ -139,7 +181,10 @@ class SimBroker:
 
     def base_to_usd(self, symbol: str, asset_class: str, ts: pd.Timestamp) -> float:
         if asset_class == "forex":
-            return usd_per_unit(split_pair(symbol)[1], ts, self.fx_rates)
+            quote = split_pair(symbol)[1]
+            if self.rate_fn is not None:
+                return self.rate_fn(quote, ts)
+            return usd_per_unit(quote, ts, self.fx_rates)
         return 1.0
 
     # --- the bar loop --------------------------------------------------------------------
@@ -150,11 +195,19 @@ class SimBroker:
         fills: list[BrokerFill] = []
         keep: list[tuple[OrderRequest, int]] = []
         for req, age in self._pending.pop(symbol, []):
-            f = self._try_fill(req, ts, o, h, l)
+            try:
+                f = self._try_fill(req, ts, o, h, l)
+            except LookupError:             # no FX rate: wait rather than fill at a guessed rate
+                keep.append((req, age))
+                continue
+            st = self._status[req.client_order_id]
             if f is not None:
                 fills.append(f)
+                st.status, st.filled_qty, st.avg_price = "filled", f.qty, f.price
             elif req.order_type == "limit" and age + 1 < self.limit_bars:
                 keep.append((req, age + 1))
+            else:
+                st.status = "expired" if req.order_type == "limit" else "rejected"
         if keep:
             self._pending[symbol] = keep
 
@@ -192,6 +245,9 @@ class SimBroker:
                 self._cash -= v
             op.last_accrual = bar_end
         self._marks[symbol] = c
+        for f in fills:
+            f.fill_id = f"sim-{next(self._fill_seq)}"
+        self._fills.extend(fills)
         return fills
 
     def _try_fill(self, req: OrderRequest, ts, o, h, l) -> BrokerFill | None:
@@ -248,4 +304,5 @@ class SimBroker:
             for k in op.hold:
                 op.hold[k] *= 1 - share
         return BrokerFill(coid, did, ts, p.symbol, -p.direction, qty, fill, fees,
-                          (unit["spread"] + unit["slippage"]) * qty * op.base_to_usd, reason, p.book)
+                          (unit["spread"] + unit["slippage"]) * qty * op.base_to_usd, reason, p.book,
+                          net_pnl_usd=net, position_closed=full)
