@@ -185,7 +185,10 @@ def walk_forward(
         equity = pd.concat([pd.Series([base_cfg.initial_equity], index=[equity.index[0] - pd.Timedelta(days=1)]), equity])
     oos = metrics.summarize(equity, trades, oos_ret) if len(equity) else metrics.trade_stats(trades)
     n_trials = max(len(grid), trials.count(spec.id))
-    var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if any(len(x) > 1 for x in trial_srs) else 0.0
+    run_var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if any(len(x) > 1 for x in trial_srs) else 0.0
+    # N counts every parameter set ever tried, so V must too: a narrower re-run (even a single
+    # parameter set) would otherwise have V=0, no deflation, and DSR would fall back to plain PSR.
+    var = max(run_var, trials.sharpe_variance(spec.id))
     oos["dsr"] = metrics.deflated_sharpe(oos_ret, n_trials, var)
     oos["expected_max_sharpe_annual"] = metrics.expected_max_sharpe(n_trials, var) * np.sqrt(metrics.PERIODS_PER_YEAR)
     oos["positive_folds"] = float(np.mean([f.test_return > 0 for f in folds])) if folds else 0.0

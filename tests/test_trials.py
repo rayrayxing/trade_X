@@ -33,3 +33,29 @@ def test_walk_forward_uses_global_ledger_by_default(stock_data, tmp_path):
     spec = StrategySpec.load("strategies/seeds/stk-ema-pullback-swing.yaml")
     walk_forward(spec, stock_data, wf=WalkForwardConfig(n_folds=2, grid_points=2))
     assert TrialLedger(tmp_path / "trials.sqlite").count(spec.id) == 4   # conftest points the env var here
+
+
+def test_sharpe_variance_comes_from_every_set_tried(tmp_path):
+    led = TrialLedger(tmp_path / "v.sqlite")
+    w = ("2024-01-01", "2024-06-01")
+    for i, sr in enumerate([0.0, 0.1, 0.2]):
+        led.record("s", 1, {"a": i}, run_id="r1", fold=0, window=w, sharpe=sr)
+    assert led.sharpe_variance("s") > 0 and led.sharpe_variance("none") == 0.0
+    # a later run of one set in the same window updates that set's Sharpe instead of adding a spread of its own
+    led.record("s", 1, {"a": 0}, run_id="r2", fold=0, window=w, sharpe=0.0)
+    assert led.sharpe_variance("s") == __import__("statistics").variance([0.0, 0.1, 0.2])
+    # a window holding a single set contributes nothing
+    led.record("s", 1, {"a": 0}, run_id="r3", fold=1, window=("2024-06-01", "2024-12-01"), sharpe=5.0)
+    assert led.sharpe_variance("s") == __import__("statistics").variance([0.0, 0.1, 0.2])
+
+
+def test_narrow_rerun_keeps_the_deflation_of_the_wide_search(stock_data, tmp_path):
+    spec = StrategySpec.load("strategies/seeds/stk-ema-pullback-swing.yaml")
+    led = TrialLedger(tmp_path / "rerun.sqlite")
+    wide = walk_forward(spec, stock_data, wf=WalkForwardConfig(n_folds=3, grid_points=3), trials=led)
+    assert wide.oos["expected_max_sharpe_annual"] > 0
+    only_best = spec.with_params(wide.recommended_params)
+    narrow = walk_forward(only_best, stock_data, wf=WalkForwardConfig(n_folds=3, grid_points=1), trials=led)
+    # one parameter set this run (V=0 on its own), yet the ledger's spread still deflates it
+    assert narrow.n_trials_this_run == 1 and narrow.n_trials >= wide.n_trials
+    assert narrow.oos["expected_max_sharpe_annual"] > 0
