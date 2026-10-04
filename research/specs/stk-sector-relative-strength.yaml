@@ -1,0 +1,22 @@
+id: stk-sector-relative-strength
+version: 1
+asset_class: stocks
+family: momentum
+hypothesis: A stock that has beaten its sector ETF over the last quarter and still trades above its relative-strength average keeps leading its sector for weeks.
+universe: [NVDA, AMD, TSLA, META, AMZN, AAPL, MSFT, KO, PEP, XOM, CVX, V, MA, JPM, BAC, GS, MS, HD, LOW, MRK, PFE, WMT, COST, INTC, CSCO, GOOGL, ORCL, UNH, JNJ]
+timeframes: {signal: D1}
+features:
+  rsm: {fn: data.column, name: rs_mom}
+  rsa: {fn: data.column, name: rs_above}
+entry:
+  long: "rsm > 0.05 and rsa > 0"
+exit:
+  stop_atr: 2.5
+  target_r: 2.5
+  max_bars: 20
+  long_when: "rsa < 0"
+holding: {expected_hours: 480}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.5, 3.5], target_r: [1.5, 3.5]}
+provenance: {source: "catalog: relative strength vs sector", author: claude, created: 2026-10-04}
+status: proposed

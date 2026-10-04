@@ -1,0 +1,22 @@
+id: etf-ts-xs-momentum
+version: 1
+asset_class: stocks
+family: momentum
+hypothesis: Hold ETFs whose own 12-month return is positive (time-series momentum) and that rank in the top 30% of the ETF set (cross-sectional momentum); the two filters together cut the false signals of either alone.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, TLT, GLD]
+timeframes: {signal: D1}
+features:
+  m:  {fn: data.column, name: mom}
+  xs: {fn: data.column, name: mom_xs}
+entry:
+  long: "m > 0 and xs >= 0.7"
+exit:
+  stop_atr: 3.0
+  target_r: 3.0
+  max_bars: 20
+  long_when: "xs < 0.5 or m < 0"
+holding: {expected_hours: 480}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 4.0], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: joint time-series and cross-sectional strategy", author: claude, created: 2026-10-04}
+status: proposed

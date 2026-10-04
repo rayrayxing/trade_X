@@ -142,6 +142,17 @@ def efficiency_ratio(ctx: FeatureContext, period: int = 20) -> pd.Series:
     return (c - c.shift(period)).abs() / c.diff().abs().rolling(period).sum()
 
 
+@register("data.column")
+def column(ctx: FeatureContext, name: str) -> pd.Series:
+    """A precomputed column carried on the bars (research panels: cross-sectional ranks, pair spreads).
+
+    The builder of that column is responsible for causality; see tradex.research.panels.
+    """
+    if name not in ctx.bars.columns:
+        raise KeyError(f"data.column: bars have no column {name!r}; build them with tradex.research.panels")
+    return ctx.bars[name]
+
+
 @register("stat.gap_pct")
 def gap_pct(ctx: FeatureContext) -> pd.Series:
     """Open versus previous close."""

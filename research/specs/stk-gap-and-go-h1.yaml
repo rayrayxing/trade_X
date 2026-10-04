@@ -1,0 +1,22 @@
+id: stk-gap-and-go-h1
+version: 1
+asset_class: stocks
+family: breakout
+hypothesis: A gap of 2% or more whose first hour closes in the gap's direction keeps going for the rest of the session. No news filter (no news history), so this tests the price rule alone.
+universe: [NVDA, AMD, TSLA, META, AMZN, AAPL, MSFT]
+timeframes: {signal: H1}
+features:
+  gap: {fn: data.column, name: gap}
+  fr:  {fn: data.column, name: first_ret}
+entry:
+  long:  "gap > 0.02 and fr > 0"
+  short: "gap < -0.02 and fr < 0"
+exit:
+  stop_atr: 1.5
+  target_r: 2.0
+  max_bars: 5
+holding: {expected_hours: 5}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.0, 2.5], target_r: [1.0, 3.0]}
+provenance: {source: "catalog: gap-and-go after news gap (price rule only)", author: claude, created: 2026-10-04}
+status: proposed
