@@ -25,7 +25,6 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from tradex.agents.common import REAL_MODES, ShadowStore
 from tradex.agents.outcomes import Resolver
