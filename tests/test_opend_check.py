@@ -1,5 +1,8 @@
 import json
 import pandas as pd
+import pytest
+
+pytest.importorskip("moomoo")  # collect() reads moomoo enums; the SDK is an optional extra, absent in CI
 from tradex.data.opend_check import collect
 
 
