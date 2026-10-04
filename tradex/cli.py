@@ -135,8 +135,13 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--only", nargs="+", metavar="NAME")
     st.add_argument("--status", action="store_true", help="print set/missing per secret and exit")
 
+    sub.add_parser("opend-check", help="read-only report on local OpenD: quotas, entitlements, SIMULATE capabilities")
+
     a = ap.parse_args(argv)
 
+    if a.cmd == "opend-check":
+        from tradex.data.opend import run
+        return run()
     if a.cmd == "setup":
         from tradex.setup_cmd import run_setup
         return run_setup(a.only, a.status)
