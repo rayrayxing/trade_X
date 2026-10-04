@@ -52,6 +52,7 @@ def main(argv: list[str]) -> int:
         print(f"snapshot of {src} failed: {exc}", file=sys.stderr)
         return 1
     if "--verify-chain" in argv:
+        sys.path.append(str(Path(__file__).resolve().parents[2]))      # running from a checkout without pip install -e
         from tradex.core.ledger import Ledger
         led = Ledger(dst, read_only=True, git_commit="")
         ok, bad = led.verify()

@@ -110,7 +110,7 @@ def env_for(tmp: Path, **extra) -> dict:
     env.update(HOME=str(home), TRADEX_OPS_ENV=str(tmp / "no-such-ops.env"), TRADEX_HOME=str(ROOT),
                TRADEX_PYTHON=sys.executable, TRADEX_STATE=str(tmp / "state"), TRADEX_LOG_DIR=str(tmp / "logs"),
                TRADEX_LEDGER=str(tmp / "ledger.sqlite"), SECURITY_BIN="/bin/false",
-               PYTHONUSERBASE=site.getuserbase())            # a fake HOME must not hide user-installed packages
+               PYTHONUSERBASE=site.getuserbase(), PYTHONPATH=str(ROOT))            # a fake HOME must not hide user-installed packages
     env.update({k: str(v) for k, v in extra.items()})
     return env
 
