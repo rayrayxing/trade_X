@@ -21,7 +21,8 @@ For each symbol with a bar closing at ``ts``:
    window of at least three lookbacks). Qualified strategies vote in the ensemble book;
    every active strategy also trades its own virtual book.
 4. Gate 2 finalises a plan, gate 3 applies context vetoes (event calendar, short-side
-   checks), gate 4 (the risk gate) sets the size. The order cites the verdict ID.
+   checks), gate 4 (the risk gate) sets the size, within the free margin of the venue
+   the trade goes to. The order cites the verdict ID.
 5. Every step is a ledger row under one decision ID. Rejected and vetoed plans are
    followed by the counterfactual tracker to the exit they would have had.
 
@@ -48,12 +49,13 @@ from tradex.decision.ensemble import DEFAULT_HIT_RATE, PlanRules, finalise
 from tradex.events import EventCalendar
 from tradex.execution.checks import SanityPolicy, ShortInfo, ShortPolicy, sanity_check, short_check
 from tradex.execution.guard import OrderRefused
-from tradex.execution.sim import SimBroker
+from tradex.execution.sim import MARGIN_RATES, SimBroker
 from tradex.positions.review import ActionKind, MarketSnapshot, OpenPosition, PositionReviewer
 from tradex.risk.exposure import Leg, net_open_position
 from tradex.risk.gate import BookState, RiskGate
 from tradex.runtime.fx import LIVE_MODES, MissingRate, RateSource, SeriesRates, rate_snapshot
 from tradex.runtime.signals import SignalCache
+from tradex.runtime.venues import margin_max_qty
 from tradex.strategy.spec import StrategySpec
 from tradex.timeframes import duration
 
@@ -76,6 +78,7 @@ class CoreConfig:
     family_weights: dict[str, float] | None = None
     mode: str = "replay"                          # backtest | replay | paper | live
     signal_window_mult: int = 3                   # rolling signal window, in strategy lookbacks
+    margin_rates: dict[str, float] = field(default_factory=lambda: dict(MARGIN_RATES))  # conservative: 20:1 fx, cash stocks
 
     @property
     def live(self) -> bool:
@@ -313,6 +316,9 @@ class TradingCore:
             eq = self._equity(book, close_t)
             fx = rate_snapshot(self.rates, _currencies(legs) | _currencies([plan]), close_t)
             last = self._mark(plan.symbol)
+            venue = br.venue_for(plan.asset_class) if hasattr(br, "venue_for") else br
+            q_margin, margin = margin_max_qty(venue, self.rates, close_t, self.cfg.margin_rates[plan.asset_class],
+                                              plan.entry_price * bu)
         except (MissingRate, MissingData) as exc:
             self._health("data", False, f"{did}: {exc}", close_t)
             self._block(plan, "data", str(exc), close_t)
@@ -320,7 +326,7 @@ class TradingCore:
         cm = self.costs[plan.asset_class]
         fee_fn = lambda q: (sum(cm.order_fees(plan.symbol, plan.direction, q, plan.entry_price, close_t).values())  # noqa: E731
                             + sum(cm.order_fees(plan.symbol, -plan.direction, q, plan.targets[0], close_t).values()))
-        state = BookState(eq, legs, self.tier, fx)
+        state = BookState(eq, legs, self.tier, fx, q_margin, margin)
         promoted = book == "ensemble" and all(self.spec_by_id[s].status == "live" for s in plan.strategies)
         verdict = self.gate.review(plan, state, bu, fee_fn, factor, promoted)
         verdict.verdict_id = f"{did}-v"
