@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "config" / "gates" / "readiness.yaml"
-REAL_MODES = ("paper", "live")
+REAL_MODES = ("paper", "live", "real_history")   # real_history: real vendor bars (research gate), never synthetic
 
 
 @dataclass

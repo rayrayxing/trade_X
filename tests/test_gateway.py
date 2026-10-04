@@ -134,3 +134,36 @@ def test_submit_does_not_block_and_unknown_category(tmp_path):
     g.submit("critic", "p", on_done=got.append).join(2)
     assert got and got[0].ok
     assert not g.call("nope", "p").ok
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(40))
+
+
+def test_image_openai_compat_and_hash_covers_bytes(tmp_path):
+    import base64
+    http = Http({"http://proxy.local": lambda b: oa("claude-sonnet-5-5", "bullish")})
+    g, mb = gw(tmp_path, http)
+    assert g.call("chart_reader", "read it", system="sys", images=[PNG]).ok
+    body = http.calls[0][2]
+    parts = body["messages"][-1]["content"]
+    assert parts[0] == {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(PNG).decode()}}
+    assert parts[-1] == {"type": "text", "text": "read it"}
+    g.call("chart_reader", "read it", system="sys", images=[PNG + b"x"])
+    g.call("chart_reader", "read it", system="sys")
+    hs = [r["prompt_hash"] for r in rows(mb)]
+    assert len(set(hs)) == 3 and hs[2] == h("read itsys")
+    assert base64.b64encode(PNG).decode() not in json.dumps([dict(x) for x in rows(mb)])
+    assert http.calls[2][2]["messages"][-1]["content"] == "read it"   # no image: plain string as before
+
+
+def test_image_anthropic_route(tmp_path):
+    import base64
+    http = Http({"http://proxy.local": lambda b: HttpResponse(500, {}),
+                 "https://api.anthropic.com": lambda b: an("claude-sonnet-5-5", "double top")})
+    g, mb = gw(tmp_path, http)
+    r = g.call("chart_reader", "read it", images=[PNG])
+    assert r.ok and r.route == "anthropic"
+    blocks = http.calls[1][2]["messages"][0]["content"]
+    assert blocks[0] == {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                    "data": base64.b64encode(PNG).decode()}}
+    assert blocks[1] == {"type": "text", "text": "read it"}
