@@ -22,7 +22,7 @@ def collect(quote, trade=None) -> dict:
     """Gather the report from open contexts (injectable for tests). Returns a dict free of identifiers."""
     try:
         from moomoo import RET_OK
-    except ImportError:          # moomoo-api is an optional extra; its success code is 0
+    except ImportError:  # SDK absent (CI, `.[dev]` only): the SDK's documented success code is 0
         RET_OK = 0
     rep: dict = {}
     ret, st = quote.get_global_state()
