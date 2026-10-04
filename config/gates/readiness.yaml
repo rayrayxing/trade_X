@@ -1,0 +1,47 @@
+# Live-gate readiness scorecard. PROTECTED PATH: agents cannot change this file.
+# Every criterion must pass before Ray is asked for the go-ahead. Evidence counts only
+# when it comes from real data in paper or live runs (real_data_only), never from
+# synthetic bars, backtest-only rows or replays.
+#
+# evidence.source: ledger kind or table; evidence.metric: how the evaluator reads it.
+criteria:
+  - id: clean_reconcile_parity
+    description: 2 weeks of clean broker reconcile and replay-vs-live parity
+    evidence: {source: "events kind=health check in (reconcile, parity)", metric: consecutive_clean_days}
+    threshold: {min: 14}
+    real_data_only: true
+  - id: paper_trades_per_venue
+    description: At least 30 closed paper trades on each venue (Oanda practice, moomoo SIMULATE)
+    evidence: {source: "events kind=close, grouped by venue", metric: min_closed_trades_per_venue}
+    threshold: {min: 30}
+    real_data_only: true
+  - id: costs_vs_model
+    description: Measured costs within 10% of the cost model
+    evidence: {source: "events kind=fill fees_usd+spread_slippage_usd vs modelled", metric: max_cost_deviation_pct}
+    threshold: {max: 10}
+    real_data_only: true
+  - id: stops_on_every_position
+    description: Every position has a broker-side or guarded stop at all times
+    evidence: {source: "events kind=snapshot positions[].stop; kind=health check=stop_guard", metric: positions_without_stop}
+    threshold: {max: 0}
+    real_data_only: true
+  - id: governor_tiers_tested
+    description: Governor tier changes (drawdown scaling) exercised and tested
+    evidence: {source: "events kind=snapshot limits.tier changes", metric: tier_changes_observed}
+    threshold: {min: 1}
+    real_data_only: true
+  - id: strategies_passing_real_data
+    description: At least 3 strategies pass the stage-3 gate on real data
+    evidence: {source: "reports/*.json validation reports (data_source=real)", metric: strategies_passing}
+    threshold: {min: 3}
+    real_data_only: true
+  - id: forward_inside_backtest_range
+    description: Forward results inside the backtest bootstrap range, with the decay alarm armed
+    evidence: {source: "events kind=close vs bootstrap band; kind=health check=decay_alarm", metric: forward_inside_band_and_alarm_armed}
+    threshold: {min: 1}
+    real_data_only: true
+  - id: ray_go_ahead
+    description: Ray's explicit go-ahead
+    evidence: {source: "commands command=go_live_approved source=dashboard", metric: approvals}
+    threshold: {min: 1}
+    real_data_only: true
