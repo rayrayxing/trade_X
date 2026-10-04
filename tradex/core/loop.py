@@ -606,7 +606,7 @@ class TradingCore:
             del self._entries[did]
             self.meta.pop(("ensemble", did), None)
             self._block(plan, self._place_err, f"resize to {qty:g} refused", t)
-            return True
+            return False
         self._entries[did] = (new, plan)
         self.ledger.append(Order(did, new.client_order_id, t.isoformat(), req.symbol, req.side, qty, "market", None,
                                  f"entry: {why}", "ensemble"))
