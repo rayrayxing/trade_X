@@ -24,7 +24,8 @@ from tradex.strategy.spec import StrategySpec
 
 T0 = pd.Timestamp("2026-03-02 21:00", tz="UTC")
 ZERO_COST = {"stocks": model_for("stocks", platform_fee=0.0, settlement_fee_per_share=0.0, sec_fee_rate=0.0,
-                                  finra_taf_per_share=0.0, default_half_spread_bps=0.0, slippage_bps=0.0),
+                                  finra_taf_per_share=0.0, cat_fee_per_share=0.0,
+                                  min_regulatory_fee=0.0, default_half_spread_bps=0.0, slippage_bps=0.0),
              "forex": model_for("forex", default_spread_pips=0.0, spread_pips={}, slippage_pips=0.0)}
 
 
@@ -316,3 +317,15 @@ def test_protected_paths_check():
     assert mod.violations(["config/risk/policy.yaml", "tradex/risk/gate.py", "strategies/x.yaml"], prefixes) == \
         ["config/risk/policy.yaml", "tradex/risk/gate.py"]
     assert mod.main(["--head-ref", "claude/feature"]) == 0
+
+
+def test_bundled_calendar_loads_and_vetoes_fomc():
+    from pathlib import Path
+    from tradex.events import EventCalendar
+    files = sorted(Path("data/calendar").glob("*.yaml"))
+    cal = EventCalendar.load(files)
+    kinds = {e.kind for e in cal.events}
+    assert {"fomc", "boj", "ecb", "cpi"} <= kinds
+    t = pd.Timestamp("2026-10-28 18:00", tz="UTC")          # one hour before the October FOMC statement
+    veto, _, hits = cal.check("EUR_USD", "forex", t, t + pd.Timedelta(hours=4))
+    assert veto and any(h.kind == "fomc" for h in hits)

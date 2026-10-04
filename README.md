@@ -107,8 +107,15 @@ Human branches are not checked.
 - **Oanda admin fee:** the 2.5% is applied in full on both sides (conservative reading).
 - **Historical forex rates:** `tradex/costs/policy_rates.csv`, written from memory and
   marked as an estimate; live trading reads Oanda's `financing` field.
-- **Stock fees not in the design doc** (settlement US$0.003/share, SEC and FINRA rates)
-  are from memory and need checking against Moomoo's fee page.
+- **Stock fees** are checked against moomoo SG's fee page and the SEC and FINRA notices
+  (2026-10-04): US$0.99 platform fee plus 9% GST, settlement US$0.003/share capped at 1%,
+  CAT, SEC US$20.60 per million on sales, FINRA TAF US$0.000195/share (max US$9.79). The
+  TAF rises to US$0.000232 (max US$11.61) on 1 Jan 2027.
+- **Oanda SG pricing:** modelled as spread-only. Core pricing (tighter spread plus
+  commission) is offered, but Oanda's own pages disagree on the commission (US$30 vs
+  US$40-50 per million), so it is not modelled until confirmed from the account. Retail
+  leverage is capped at 20:1; the top risk tier uses 14:1. Oanda's order book and position
+  book endpoints no longer work for v20 accounts, so nothing here relies on them.
 - **Hard holding ceilings:** 30 days for stocks, 10 days for forex, on top of each
   strategy's own `max_bars`.
 
@@ -127,5 +134,7 @@ Human branches are not checked.
 - Only 8 of the ~20 seed strategies; more chart patterns (head and shoulders, triangles,
   flags, wedges) are still to add to the registry.
 - News, chatter and the Claude headline reviewer are interfaces; thread 3 connects them.
-- Event calendars (earnings, NFP/CPI/FOMC) are inputs; without them those filters are
-  inactive and the report says so.
+- `data/calendar` ships FOMC, BoJ and ECB decision days for 2026-2027 and the remaining
+  2026 CPI dates, with sources. Jobs-report dates, 2027 CPI and earnings dates still need
+  importing (BLS publishes an iCalendar feed; Alpha Vantage's free key has an earnings
+  calendar). Without them those filters are inactive and the report says so.
