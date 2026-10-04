@@ -14,7 +14,8 @@ Prices from the agreeing votes:
 - time stop: the shortest of their limits in time, counted in bars of the finest timeframe
   among them (votes from different timeframes can agree: a higher-timeframe vote stays
   valid until that timeframe's next close, so H1 and H4 strategies can form one plan)
-- entry reference: the freshest vote's close (finest timeframe on ties)
+- entry reference and plan time: the freshest vote's (the close being decided); a plan whose
+  price is already through a held vote's stop, or past every target, is not traded
 
 Probability is the mean of the agreeing strategies' measured hit rates, labelled
 ``base_rate`` until the meta-label size model is calibrated in paper.
@@ -84,12 +85,13 @@ def finalise(votes: list[Vote], decision_id: str, rules: PlanRules, cost: CostMo
     oppose = max((s for d, s, _ in fams.values() if d != direction), default=0.0)
     agreeing = [v for v in votes if v.family in agree and v.direction == direction]
 
-    v0 = max(agreeing, key=lambda v: (pd.Timestamp(v.time), -_dur(v.tf)))   # first on ties
+    v0 = max(votes, key=lambda v: (pd.Timestamp(v.time), -_dur(v.tf)))      # the decision time; first on ties
     entry = v0.entry_ref
     stops = [v.stop for v in agreeing]
     stop = min(stops) if direction > 0 else max(stops)
     tgts = sorted({t for v in agreeing for t in v.targets}, key=lambda t: abs(t - entry))
-    t1, t2 = tgts[0], tgts[-1]
+    ahead = [t for t in tgts if direction * (t - entry) > 0]              # a held vote's target may be behind price
+    t1, t2 = (ahead or tgts)[0], (ahead or tgts)[-1]
     _, unit = cost.fill(v0.symbol, direction, entry, pd.Timestamp(v0.time))
     cost_u = 2 * (unit["spread"] + unit["slippage"])
     risk = abs(entry - stop)
@@ -106,6 +108,10 @@ def finalise(votes: list[Vote], decision_id: str, rules: PlanRules, cost: CostMo
         reward_risk=round(rr, 4), ev_r=round(p * rr - (1 - p), 4),
         cost_r=round(cost_u / risk, 4) if risk else 0.0, book=book, tf=tf,
     )
+    if direction * (entry - stop) <= 0:
+        return plan, f"price {entry:.5g} is already through the stop {stop:.5g} of a held vote"
+    if not ahead:
+        return plan, f"price {entry:.5g} is already past every target"
     if len(agree) < rules.min_families:
         return plan, f"only {len(agree)} famil{'y' if len(agree) == 1 else 'ies'} agree ({', '.join(sorted(agree))}); need {rules.min_families}"
     if oppose > rules.max_opposing_strength:

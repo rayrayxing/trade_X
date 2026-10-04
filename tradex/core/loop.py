@@ -150,7 +150,7 @@ class TradingCore:
         self.reviewers = {s.id: PositionReviewer(_policy_from_spec(s)) for s in self.strategies}
         self.spec_by_id = {s.id: s for s in self.strategies}
         self.signals = SignalCache(data, self.cfg.signal_window_mult)
-        self.cf = CounterfactualTracker()
+        self.cf = CounterfactualTracker(self.bar)
         self._orders: dict[str, dict[str, str]] = {b: {} for b in self.brokers}      # open client IDs -> symbol
         self._cursor: dict[tuple[str, str], tuple[pd.Timestamp, set[str]]] = {}
         self._stats: dict[str, list[float]] = {b: [0, 0.0] for b in self.brokers}    # closed trades, net P&L

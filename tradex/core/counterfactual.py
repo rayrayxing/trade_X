@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from tradex.core.records import Counterfactual, TradePlan
+from tradex.timeframes import duration
 
 
 @dataclass
@@ -24,8 +25,12 @@ class _Ghost:
 
 
 class CounterfactualTracker:
-    def __init__(self) -> None:
+    def __init__(self, bar: pd.Timedelta | None = None) -> None:
         self.open: list[_Ghost] = []
+        self.bar = bar                    # the bars on_bar is fed; a plan's time stop counts its own timeframe
+
+    def _limit(self, p: TradePlan) -> float:
+        return p.max_bars * (duration(p.tf) / self.bar) if p.tf and self.bar is not None else p.max_bars
 
     def track(self, plan: TradePlan, blocked_by: str) -> None:
         self.open.append(_Ghost(plan, blocked_by))
@@ -46,7 +51,7 @@ class CounterfactualTracker:
                 hit = ("stop", -1.0)
             elif (h >= t1) if d > 0 else (l <= t1):
                 hit = ("target", d * (t1 - p.entry_price) / risk)
-            elif g.bars >= p.max_bars:
+            elif g.bars >= self._limit(p):
                 hit = ("time_stop", d * (c - p.entry_price) / risk)
             if hit:
                 done.append(Counterfactual(p.decision_id, p.time, g.blocked_by, close_t.isoformat(), hit[0],
