@@ -1,0 +1,22 @@
+id: etf-panic-rebound
+version: 1
+asset_class: stocks
+family: mean_reversion
+hypothesis: After a volatility spike and a drawdown of more than 10% from the one-year high, the first up day marks a rebound that lasts weeks. Realised-volatility percentile stands in for VIX, which the data set does not carry.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB]
+timeframes: {signal: D1}
+features:
+  vp: {fn: data.column, name: rg_vol_pct}
+  dd: {fn: data.column, name: rg_dd}
+entry:
+  long: "vp > 0.9 and dd < -0.1 and close > shift(close, 1)"
+exit:
+  stop_atr: 4.0
+  target_r: 3.0
+  max_bars: 60
+  long_when: "vp < 0.6 or dd > -0.03"
+holding: {expected_hours: 1440}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [3.0, 5.0], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: buy equity after a VIX spike above 30 (realised-volatility form)", author: claude, created: 2026-10-04}
+status: proposed

@@ -254,7 +254,8 @@ def test_seed_strategy_files_are_listed_with_empty_forward(tmp_path):
     src = sources(tmp_path, tmp_path / "none.sqlite")
     src.strategies_dir = Path(__file__).resolve().parents[1] / "strategies"
     d = Views(src).strategies()
-    assert len(d["strategies"]) == 8 and all(s["forward"]["trades"] == 0 and s["forward"]["avg_r"] is None for s in d["strategies"])
+    on_disk = len(list((src.strategies_dir).rglob("*.yaml")))
+    assert len(d["strategies"]) == on_disk >= 8 and all(s["forward"]["trades"] == 0 and s["forward"]["avg_r"] is None for s in d["strategies"])
 
 
 def test_system_hides_account_ids_and_reports_gateway(client, tmp_path):

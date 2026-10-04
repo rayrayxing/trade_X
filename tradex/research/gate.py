@@ -8,6 +8,7 @@ config/gates/thresholds.yaml. Entries whose data we do not have are reported as
 or need a model or engine feature not built yet, say so.
 
     python -m tradex.research.gate            # writes research/results/phase1_gate.{json,md}
+    python -m tradex.research.gate stk-pead-ear   # one strategy by strategy id or catalog id; prints, writes research/results/single/<id>.json
 """
 from __future__ import annotations
 
@@ -24,13 +25,15 @@ from tradex.backtest.engine import EngineConfig
 from tradex.backtest.validation import Thresholds, WalkForwardConfig, walk_forward
 from tradex.costs.models import model_for
 from tradex.data.opend import DEFAULT_CACHE as OPEND_CACHE, load_cached
-from tradex.research import catalog, panels
+from tradex.research import builders, catalog, panels
+from tradex.research.sources import DataUnavailable
 from tradex.research.trials import TrialLedger
 from tradex.strategy.spec import StrategySpec
 
 ROOT = Path(__file__).resolve().parents[2]
 SEEDS = ROOT / "strategies" / "seeds"
 SPECS = ROOT / "research" / "specs"
+PROPOSED = ROOT / "strategies" / "proposed"
 RESULTS = ROOT / "research" / "results"
 OANDA_CACHE = ROOT / "data" / "cache" / "oanda"
 
@@ -61,6 +64,10 @@ def _spec(name):
     return SPECS / f"{name}.yaml"
 
 
+def _proposed(name):
+    return PROPOSED / f"{name}.yaml"
+
+
 NO_OANDA = "Oanda practice bid/ask history not downloaded (no oanda_token in the Keychain yet)"
 PLANS = [
     Plan("donchian-channel-breakout", _seed("fx-donchian-breakout-h4"), "fx"),
@@ -77,6 +84,18 @@ PLANS = [
     Plan("gap-and-go-after-news-gap", _spec("stk-gap-and-go-h1"), "sessions"),
     Plan("overnight-vs-intraday-return-split", _spec("etf-overnight-hold"), "sessions"),
     Plan("joint-time-series-and-cross-sectional-strategy", _spec("etf-ts-xs-momentum"), "momentum_xs"),
+    # proposed strategies built on the injected-calendar / rate / regime features (research/proposals.md)
+    Plan("earnings-day-jump-continuation", _proposed("stk-earnings-jump-continuation"), "earnings"),
+    Plan("post-earnings-announcement-drift", _proposed("stk-pead-ear"), "earnings"),
+    Plan("pre-fomc-announcement-drift", _proposed("etf-pre-fomc-drift-h1"), "fomc_window"),
+    Plan("hidden-markov-regime-allocation", _proposed("etf-risk-on-trend"), "regime_etf"),
+    Plan("realised-covariance-regime-detection", _proposed("etf-corr-calm-trend"), "regime_etf"),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound"), "regime_etf"),
+    Plan("momentum-with-crash-protection-vol-scaled", _proposed("stk-rs-momentum-crash-protected"), "rs_crash"),
+    Plan("joint-time-series-and-cross-sectional-strategy", _proposed("fx-currency-strength-momentum"), "fx_strength"),
+    Plan("g10-carry-long-high-rate-short-low-rate", _proposed("fx-carry-trend"), "fx_carry"),
+    Plan("carry-with-volatility-filter", _proposed("fx-carry-vol-filter"), "fx_carry"),
+    Plan("rate-differential-trend-fx", _proposed("fx-rate-diff-trend"), "fx_carry"),
     Plan("deep-momentum-network-lstm-trained-on-sharpe", verdict="not built", why="needs a trained LSTM model; no model training in phase 1"),
     Plan("momentum-transformer-with-changepoints", verdict="not built", why="needs a trained transformer model"),
     Plan("slow-momentum-with-fast-reversion-changepoint-detection", verdict="not built", why="needs the Gaussian-process changepoint model"),
@@ -86,15 +105,11 @@ PLANS = [
     Plan("deep-chart-pattern-recognition-head-and-shoulders-triangles", verdict="not built", why="needs a trained pattern model"),
     Plan("large-tick-trend-filter-trade-trend-only-where-tick-size-is-large", verdict="not a standalone signal", why="a filter for trend strategies"),
     Plan("uncertainty-gated-stock-ranker-skip-when-model-unsure", verdict="not a standalone signal", why="a gate on a ranker that does not exist yet"),
-    Plan("hidden-markov-regime-allocation", verdict="not a standalone signal", why="regime input for the ensemble"),
-    Plan("realised-covariance-regime-detection", verdict="not a standalone signal", why="regime detector, an input to allocation"),
     Plan("regime-switching-volatility-forecast-for-sizing", verdict="not a standalone signal", why="sizing input"),
     Plan("long-calls-or-puts-on-high-conviction-plans", verdict="not a standalone signal", why="execution style; needs live option chains"),
     Plan("intraday-momentum-first-half-hour-predicts-last", verdict="not built",
          why="trades the last half hour; the engine fills exits at the next open, so it cannot exit at the 16:00 close yet"),
-    Plan("earnings-day-jump-continuation", verdict="needs data", why="historical earnings dates"),
     Plan("pre-earnings-run-up-and-iv-crush-options", verdict="needs data", why="historical earnings dates and option implied volatility"),
-    Plan("pre-fomc-announcement-drift", verdict="needs data", why="historical FOMC dates (data/calendar covers 2026-2027 only)"),
     Plan("llm-news-sentiment-long-short", verdict="needs data", why="news headline history"),
     Plan("chatgpt-headline-scoring", verdict="needs data", why="news headline history"),
     Plan("short-high-borrow-fee-high-short-interest-names", verdict="needs data", why="borrow-fee and short-interest history (not downloaded in phase 1)"),
@@ -116,6 +131,8 @@ def _us(symbols, tf, cache=OPEND_CACHE) -> dict[str, pd.DataFrame]:
 def build(builder: str, spec: StrategySpec, cache=OPEND_CACHE) -> tuple[dict[str, pd.DataFrame], list[str]]:
     """Real bars for the spec's universe plus the research columns it reads. Returns (data, missing symbols)."""
     syms = [s for s in spec.universe if not s.startswith("$")]
+    if builder in builders.BUILDERS:
+        return builders.BUILDERS[builder](spec, cache)
     if builder == "fx":
         return {}, syms
     data = _us(syms, spec.signal_tf, cache)
@@ -157,6 +174,17 @@ def gate_checks(oos: dict, th: Thresholds) -> list[dict]:
     return [{"rung": r, "value": vals[r], "need": need[r], "ok": bool(vals[r] >= need[r])} for r in RUNGS]
 
 
+def _costs(spec: StrategySpec, **overrides):
+    """Cost model for the spec. FX financing uses the rate file the carry features read when it exists, so the
+    signal and the cost of carrying it come from the same history; otherwise the bundled estimate table."""
+    if spec.asset_class == "forex" and builders.RATES_FILE.exists():
+        from tradex.costs.models import PolicyRates
+        t = pd.read_csv(builders.RATES_FILE, comment="#")
+        t.columns = [str(c).strip().lower() for c in t.columns]
+        overrides.setdefault("rates", PolicyRates(t))
+    return model_for(spec.asset_class, **overrides)
+
+
 def _f(x, nd=3):
     if x is None:
         return None
@@ -174,12 +202,16 @@ def run_plan(plan: Plan, entry: catalog.CatalogEntry, ledger: TrialLedger, wf: W
             "market": "US stocks/ETFs (moomoo)" if spec.asset_class == "stocks" else "FX (Oanda)"}
     if plan.builder == "fx" and not any((OANDA_CACHE / f"{s}_{spec.signal_tf}.csv").exists() for s in spec.universe):
         return row | {"result": "needs data", "why": NO_OANDA}
-    data, missing = build(plan.builder, spec, cache)
+    try:
+        data, missing = build(plan.builder, spec, cache)
+    except DataUnavailable as exc:
+        return row | {"result": "needs data", "why": str(exc)}
     if not data:
         return row | {"result": "needs data", "why": f"no cached bars for {missing}"}
     t0 = time.time()
-    rep = walk_forward(spec, data, costs=model_for(spec.asset_class), engine_cfg=cfg, wf=wf, thresholds=th,
-                       trials=ledger, data_key=f"opend:{spec.signal_tf}:{','.join(sorted(data))}")
+    src = "oanda" if spec.asset_class == "forex" else "opend"
+    rep = walk_forward(spec, data, costs=_costs(spec), engine_cfg=cfg, wf=wf, thresholds=th,
+                       trials=ledger, data_key=f"{src}:{spec.signal_tf}:{','.join(sorted(data))}")
     checks = gate_checks(rep.oos, th)
     failing = [c["rung"] for c in checks if not c["ok"]]
     oos = rep.oos
@@ -218,7 +250,7 @@ def robustness(plan: Plan, spec: StrategySpec, ledger, wf, th, cfg, cache=OPEND_
     from tradex.research.universe import LARGE_CAPS
     out = {}
     data, _ = build(plan.builder, spec, cache)
-    rep = walk_forward(spec, data, costs=model_for(spec.asset_class, stress=2.0), engine_cfg=cfg, wf=wf,
+    rep = walk_forward(spec, data, costs=_costs(spec, stress=2.0), engine_cfg=cfg, wf=wf,
                        thresholds=th, trials=ledger)
     out["costs_x2"] = _brief(rep)
     if spec.asset_class == "stocks" and spec.signal_tf == "D1" and plan.builder == "us_d1":
@@ -226,7 +258,7 @@ def robustness(plan: Plan, spec: StrategySpec, ledger, wf, th, cfg, cache=OPEND_
         alt = StrategySpec.from_dict({**spec.raw, "universe": others})
         data, _ = build(plan.builder, alt, cache)
         if data:
-            rep = walk_forward(alt, data, costs=model_for(spec.asset_class), engine_cfg=cfg, wf=wf, thresholds=th,
+            rep = walk_forward(alt, data, costs=_costs(spec), engine_cfg=cfg, wf=wf, thresholds=th,
                                trials=ledger)
             out["other_large_caps"] = _brief(rep) | {"symbols": sorted(data)}
     return out
@@ -291,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     ledger = TrialLedger()
     rows = []
     for plan in PLANS:
-        if only and plan.catalog_id not in only:
+        if only and plan.catalog_id not in only and (plan.spec is None or plan.spec.stem not in only):
             continue
         row = run_plan(plan, entries[plan.catalog_id], ledger, wf, th, cfg)
         print(f"{row.get('strategy_id', plan.catalog_id)}: {row['result']} "
@@ -315,6 +347,11 @@ def main(argv: list[str] | None = None) -> int:
         ],
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
+    if only:   # a single-strategy run keeps its own result file and leaves the full-run report alone
+        (RESULTS / "single").mkdir(exist_ok=True)
+        for r in rows:
+            (RESULTS / "single" / f"{r.get('strategy_id', r['catalog_id'])}.json").write_text(
+                json.dumps({"meta": meta, "row": r}, indent=1, default=str))
     if not only:
         (RESULTS / "phase1_gate.json").write_text(json.dumps({"meta": meta, "rows": rows}, indent=1, default=str))
         (RESULTS / "phase1_gate.md").write_text(render_md(rows, meta))
