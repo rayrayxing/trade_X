@@ -17,6 +17,7 @@ Then the size shrinks until every book limit holds:
 - stress: worst named scenario loss
 - leverage per asset class, from the governor tier
 - position count, and a minimum economic size (fees under 10% of expected profit)
+- free margin at the venue the trade goes to, when the caller supplies it
 
 Protected path: agents cannot change tradex/risk/ or config/risk/.
 """
@@ -48,6 +49,8 @@ class BookState:
     legs: list[Leg]                       # every open position, Ray's own included (account="ray")
     tier: int = 2
     fx: dict | None = None
+    margin_max_qty: float | None = None   # what the venue's free margin can carry; None = not checked
+    margin: dict | None = None            # the numbers behind it, for the decision drawer
 
 
 @dataclass
@@ -121,10 +124,14 @@ class RiskGate:
         checks["leverage"] = {"asset_class": plan.asset_class, "gross_usd": round(gross_ac, 2),
                               "cap_x": lev_cap, "max_qty": q_lev}
 
+        q_margin = math.inf if book.margin_max_qty is None else max(0.0, book.margin_max_qty)
+        if book.margin_max_qty is not None:
+            checks["margin"] = dict(book.margin or {}, max_qty=q_margin)
+
         all_exp = book_exposures(book.legs, book.fx)          # Ray's holdings count in exposure
-        q = min(want, q_heat, q_ccy, q_lev)
-        binding = min((("confidence", want), ("heat", q_heat), ("currency", q_ccy), ("leverage", q_lev)),
-                      key=lambda x: x[1])[0]
+        q = min(want, q_heat, q_ccy, q_lev, q_margin)
+        binding = min((("confidence", want), ("heat", q_heat), ("currency", q_ccy), ("leverage", q_lev),
+                       ("margin", q_margin)), key=lambda x: x[1])[0]
 
         if self.es_model is not None and q > 0:
             budget = eq * bk["es_budget_pct"] / 100.0

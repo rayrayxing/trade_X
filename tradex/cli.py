@@ -1,4 +1,4 @@
-"""Command line: tradex check | backtest | validate | select | fetch | compare-feeds |
+"""Command line (also `trade-x`): tradex setup | check | backtest | validate | select | fetch | compare-feeds |
 replay | why | verify-ledger | filters | command."""
 from __future__ import annotations
 
@@ -105,6 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--cache", default="data/cache")
     cf.add_argument("--out", default="reports/feed_comparison.md")
 
+    tg = sub.add_parser("telegram", help="Telegram alerts and commands (long polling, no inbound port)")
+    tg.add_argument("action", choices=["run"])
+    tg.add_argument("--ledger", default="data/ledger.db")
+    tg.add_argument("--skip-history", action="store_true", help="do not alert on rows already in the ledger")
+
     r = sub.add_parser("replay", help="run the trading core over recorded bars into a ledger")
     r.add_argument("--strategies", default="strategies")
     r.add_argument("--data", required=True, help="directory of {SYMBOL}_{TF}.csv files")
@@ -131,8 +136,25 @@ def main(argv: list[str] | None = None) -> int:
     cm.add_argument("name", choices=["pause", "resume", "flatten"])
     cm.add_argument("--ledger", default="data/ledger/live.sqlite")
 
+    st = sub.add_parser("setup", help="store secrets in the macOS Keychain (hidden prompts)")
+    st.add_argument("--only", nargs="+", metavar="NAME")
+    st.add_argument("--status", action="store_true", help="print set/missing per secret and exit")
+
+    sub.add_parser("opend-check", help="read-only report on local OpenD: quotas, entitlements, SIMULATE capabilities")
+
     a = ap.parse_args(argv)
 
+    if a.cmd == "opend-check":
+        from tradex.data.opend_check import run
+        return run()
+    if a.cmd == "setup":
+        from tradex.setup_cmd import run_setup
+        return run_setup(a.only, a.status)
+
+    if a.cmd == "telegram":
+        from tradex.notify.telegram import TelegramService
+        TelegramService(a.ledger, backfill=not a.skip_history).run()
+        return 0
     if a.cmd in ("replay", "why", "verify-ledger", "filters", "command"):
         return _spine_commands(a)
 

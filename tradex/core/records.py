@@ -155,6 +155,7 @@ class Verdict(Record):
     risk_pct: float
     reasons: list[str]
     checks: dict[str, Any]            # each check's value and limit, for the dashboard drawer
+    verdict_id: str = ""              # set by the core; every entry order cites it and the order guard checks it
     kind: str = field(init=False, default="verdict")
 
 

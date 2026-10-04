@@ -102,14 +102,42 @@ def overnight_days(t0: pd.Timestamp, t1: pd.Timestamp) -> int:
 
 PIP = {"JPY": 0.01}
 
-# Typical Oanda standard-account spreads in pips, a starting estimate to replace with
-# measured spreads from Oanda practice pricing.
+# BACKTEST-ONLY default spreads (pips). Paper/live never read this table: they take the
+# spread from a live RateSource fed by the Oanda stream. For backtests prefer spreads
+# measured from Oanda bid/ask candles (tradex.data.oanda.measured_spread_pips).
 DEFAULT_FX_SPREAD_PIPS = {
     "EUR_USD": 1.4, "USD_JPY": 1.4, "GBP_USD": 2.0, "AUD_USD": 1.4,
     "EUR_JPY": 2.0, "GBP_JPY": 3.0, "USD_CHF": 1.8, "USD_CAD": 2.0, "EUR_GBP": 1.6,
 }
 
-# Rough USD value of one unit of each currency, used only when no rate series is supplied.
+STRICT_MODES = ("paper", "live")
+
+
+class RateMissing(RuntimeError):
+    """A live FX rate or spread is unavailable in paper/live: the caller must block the trade and alert."""
+
+
+class RateSource(Protocol):
+    """Live quotes (from the Oanda stream) behind FX conversion and spreads in paper/live."""
+
+    def usd_per_unit(self, ccy: str, ts: pd.Timestamp | None = None) -> float: ...
+
+    def spread_pips(self, symbol: str, ts: pd.Timestamp | None = None) -> float: ...
+
+
+_RUN_MODE = "backtest"
+_RATE_SOURCE: RateSource | None = None
+
+
+def configure_run_mode(mode: str, source: RateSource | None = None) -> None:
+    """Set the process run mode. In paper/live, `usd_per_unit` uses `source` and never the constants below."""
+    global _RUN_MODE, _RATE_SOURCE
+    if mode in STRICT_MODES and source is None:
+        raise ValueError(f"{mode} mode needs a live RateSource")
+    _RUN_MODE, _RATE_SOURCE = mode, source
+
+
+# BACKTEST-ONLY rough USD value of one unit of each currency, used when no rate series is supplied.
 APPROX_USD_PER_UNIT = {"USD": 1.0, "EUR": 1.10, "GBP": 1.30, "AUD": 0.66, "JPY": 1 / 150, "CHF": 1.15, "CAD": 0.73}
 
 
@@ -187,14 +215,23 @@ class OandaFxCosts:
     admin_fee: float = 0.025
     rates: PolicyRates | None = None
     stress: float = 1.0
+    mode: str = "backtest"
+    spread_source: RateSource | None = None   # required in paper/live
 
     def __post_init__(self):
         if self.rates is None:
             self.rates = PolicyRates()
+        if self.mode in STRICT_MODES and self.spread_source is None:
+            raise ValueError(f"{self.mode} mode needs a live spread_source; defaults are backtest-only")
+
+    def _spread(self, symbol: str, ts) -> float:
+        if self.mode in STRICT_MODES:
+            return self.spread_source.spread_pips(symbol, ts)   # raises RateMissing; no fallback
+        return self.spread_pips.get(symbol, self.default_spread_pips)
 
     def fill(self, symbol, side, mid, ts):
         pip = pip_size(symbol)
-        hs = 0.5 * self.spread_pips.get(symbol, self.default_spread_pips) * pip * self.stress
+        hs = 0.5 * self._spread(symbol, ts) * pip * self.stress
         sl = self.slippage_pips * pip * self.stress
         return mid + side * (hs + sl), {"spread": hs, "slippage": sl}
 
@@ -216,7 +253,7 @@ class OandaFxCosts:
 
 
 def usd_per_unit(ccy: str, ts: pd.Timestamp | None = None, fx: dict[str, pd.Series] | None = None) -> float:
-    """USD value of one unit of ``ccy``; uses supplied series when available, else a rough constant."""
+    """USD value of one unit of ``ccy``: supplied series, then (paper/live) the live source, else a backtest constant."""
     if ccy == "USD":
         return 1.0
     if fx and ccy in fx:
@@ -224,10 +261,13 @@ def usd_per_unit(ccy: str, ts: pd.Timestamp | None = None, fx: dict[str, pd.Seri
         s = s[s.index <= ts] if ts is not None else s
         if len(s):
             return float(s.iloc[-1])
+    if _RUN_MODE in STRICT_MODES:
+        return _RATE_SOURCE.usd_per_unit(ccy, ts)               # raises RateMissing; no fallback
     return APPROX_USD_PER_UNIT[ccy]
 
 
 def model_for(asset_class: str, **overrides) -> CostModel:
+    """Cost model for an asset class. For forex in paper/live pass ``mode=`` and ``spread_source=``."""
     if asset_class == "stocks":
         return MoomooStockCosts(**overrides)
     if asset_class == "forex":
