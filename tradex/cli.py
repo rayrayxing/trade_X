@@ -1,5 +1,5 @@
 """Command line (also `trade-x`): tradex setup | check | backtest | validate | select | fetch | compare-feeds |
-replay | why | verify-ledger | filters | command | run."""
+replay | why | verify-ledger | filters | command | run | dashboard."""
 from __future__ import annotations
 
 import argparse
@@ -110,6 +110,16 @@ def main(argv: list[str] | None = None) -> int:
     tg.add_argument("--ledger", default="data/ledger.db")
     tg.add_argument("--skip-history", action="store_true", help="do not alert on rows already in the ledger")
 
+    db = sub.add_parser("dashboard", help="read-only web dashboard over the ledger (needs the [dashboard] extra)")
+    db.add_argument("--ledger", default="data/ledger/live.sqlite")
+    db.add_argument("--host", default="127.0.0.1")
+    db.add_argument("--port", type=int, default=8765)
+    db.add_argument("--strategies", default="strategies")
+    db.add_argument("--reports", default="reports")
+    db.add_argument("--bars", default="data/cache", help="cached {SYMBOL}_{TF}.csv bars for the candle charts (optional)")
+    db.add_argument("--state", default="data/state", help="where the ops scripts leave backup_ok / healthcheck_ok stamps")
+    db.add_argument("--tz", default="Asia/Singapore")
+
     r = sub.add_parser("replay", help="run the trading core over recorded bars into a ledger")
     r.add_argument("--strategies", default="strategies")
     r.add_argument("--data", required=True, help="directory of {SYMBOL}_{TF}.csv files")
@@ -158,6 +168,11 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "setup":
         from tradex.setup_cmd import run_setup
         return run_setup(a.only, a.status)
+    if a.cmd == "dashboard":
+        from tradex.dashboard.app import serve
+        from tradex.dashboard.views import Sources
+        return serve(Sources(ledger=Path(a.ledger), strategies_dir=Path(a.strategies), reports_dir=Path(a.reports),
+                             bars_dir=Path(a.bars), state_dir=Path(a.state), tz=a.tz), a.host, a.port)
 
     if a.cmd == "telegram":
         from tradex.notify.telegram import TelegramService

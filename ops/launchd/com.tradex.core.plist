@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Core runtime: the paper trading loop. caffeinate keeps the Mac awake while it runs (on AC power). -->
+    <key>Label</key>
+    <string>com.tradex.core</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>-s</string>
+        <string>/bin/bash</string>
+        <string>__TRADEX_HOME__/ops/bin/run-service.sh</string>
+        <string>core</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__TRADEX_HOME__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>TRADEX_HOME</key>
+        <string>__TRADEX_HOME__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ExitTimeOut</key>
+    <integer>60</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/tradex/core.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/tradex/core.err.log</string>
+</dict>
+</plist>
