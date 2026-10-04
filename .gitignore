@@ -8,3 +8,4 @@ dist/
 .env
 data/cache/
 reports/
+data/research/

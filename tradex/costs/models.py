@@ -232,4 +232,57 @@ def model_for(asset_class: str, **overrides) -> CostModel:
         return MoomooStockCosts(**overrides)
     if asset_class == "forex":
         return OandaFxCosts(**overrides)
+    if asset_class == "options":
+        return MoomooOptionCosts(**overrides)
     raise ValueError(asset_class)
+
+
+# --- US options at Moomoo SG -------------------------------------------------------------
+
+@dataclass
+class MoomooOptionCosts:
+    """Moomoo SG US-options costs, fixed plan (Ray's phase-1 brief, 4 Oct 2026).
+
+    Per order: commission US$0.65/contract (min US$1.99) and platform fee US$0.30/contract
+    (min US$0.99), both plus 9% GST; options regulatory fee (ORF) US$0.013/contract; OCC
+    clearing US$0.02/contract capped at US$55 per trade; CAT US$0.0003/contract. Sells also
+    pay SEC Section 31 (0.0000206 x premium value) and FINRA TAF US$0.00279/contract. About
+    US$3.28 per order for one contract, falling to about US$1.07 per contract at ten.
+    ``qty`` is contracts and ``price`` the premium per share; one contract covers 100 shares.
+    """
+
+    asset_class: str = "options"
+    multiplier: int = 100
+    commission_per_contract: float = 0.65
+    commission_min: float = 1.99
+    platform_per_contract: float = 0.30
+    platform_min: float = 0.99
+    gst: float = 0.09
+    orf_per_contract: float = 0.013
+    occ_per_contract: float = 0.02
+    occ_max: float = 55.0
+    cat_per_contract: float = 0.0003
+    sec_fee_rate: float = 20.60e-6         # USD per USD of sale proceeds
+    finra_taf_per_contract: float = 0.00279
+    half_spread_pct: float = 0.02          # of premium; options spreads are wide, measure before trusting
+    slippage_pct: float = 0.01
+    stress: float = 1.0
+
+    def fill(self, symbol, side, mid, ts):
+        hs = self.half_spread_pct * mid * self.stress
+        sl = self.slippage_pct * mid * self.stress
+        return mid + side * (hs + sl), {"spread": hs, "slippage": sl}
+
+    def order_fees(self, symbol, side, qty, price, ts):
+        commission = max(self.commission_per_contract * qty, self.commission_min)
+        platform = max(self.platform_per_contract * qty, self.platform_min)
+        fees = {"commission": commission, "platform": platform, "gst": self.gst * (commission + platform),
+                "orf": self.orf_per_contract * qty, "occ": min(self.occ_per_contract * qty, self.occ_max),
+                "cat": self.cat_per_contract * qty}
+        if side < 0:
+            fees["sec"] = self.sec_fee_rate * qty * price * self.multiplier
+            fees["finra_taf"] = self.finra_taf_per_contract * qty
+        return fees
+
+    def holding_cost(self, symbol, direction, qty, price, t0, t1, base_to_usd=1.0, borrowed_usd=0.0):
+        return {}

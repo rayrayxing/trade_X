@@ -32,3 +32,9 @@ def simple_spec(asset_class="stocks", long="close > 0", short=None, tf="D1", **e
     if short:
         d["entry"]["short"] = short
     return StrategySpec.from_dict(d)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_trial_ledger(tmp_path, monkeypatch):
+    """Walk-forward appends to the global trial ledger; keep tests out of data/research/."""
+    monkeypatch.setenv("TRADEX_TRIALS_DB", str(tmp_path / "trials.sqlite"))

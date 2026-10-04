@@ -5,7 +5,8 @@ the training window, the best one is picked, and it is then run once on the
 following unseen test window. Only test-window results count. A gap equal to the
 strategy's maximum holding time separates train and test so no trade straddles them.
 The stitched out-of-sample returns are scored with the deflated Sharpe ratio, using
-the number of parameter sets tried, so a large search cannot pass by luck.
+the number of parameter sets ever tried for the strategy (the global trial ledger,
+tradex.research.trials), so a large search, or many small ones, cannot pass by luck.
 """
 from __future__ import annotations
 
@@ -74,12 +75,13 @@ class ValidationReport:
     version: int
     status: str
     reasons: list[str]
-    n_trials: int
+    n_trials: int                          # distinct parameter sets ever tried (DSR's N)
     oos: dict
     folds: list[FoldResult]
     param_stability: float
     recommended_params: dict
     warnings: list[str] = field(default_factory=list)
+    n_trials_this_run: int = 0
     oos_returns: pd.Series | None = field(default=None, repr=False)
     oos_trades: pd.DataFrame | None = field(default=None, repr=False)
 
@@ -114,7 +116,13 @@ def walk_forward(
     thresholds: Thresholds | None = None,
     tradable: dict[str, pd.Series] | None = None,
     filter_ctx: dict | None = None,
+    trials=None,
+    data_key: str | None = None,
 ) -> ValidationReport:
+    """``trials`` is a TrialLedger; None uses the global one (``TRADEX_TRIALS_DB`` or data/research/)."""
+    from tradex.research.trials import TrialLedger
+    trials = trials if trials is not None else TrialLedger()
+    run_id = TrialLedger.new_run_id()
     wf = wf or WalkForwardConfig()
     th = thresholds or Thresholds.from_config()
     base_cfg = engine_cfg or EngineConfig()
@@ -150,6 +158,9 @@ def walk_forward(
             sr = metrics.sharpe(res.daily_returns, annualise=False)
             scored.append((sr, len(res.trades), params, s, sig))
         trial_srs.append([x[0] for x in scored])
+        trials.record_many([dict(strategy_id=spec.id, version=spec.version, params=x[2], run_id=run_id, fold=k,
+                                 window=(tr_s, tr_e), data_key=data_key, sharpe=float(x[0]), trades=x[1])
+                            for x in scored])
         eligible = [x for x in scored if x[1] >= wf.min_train_trades] or scored
         best = max(eligible, key=lambda x: x[0])
         test = run(best[3], best[4], te_s, te_e)
@@ -173,8 +184,8 @@ def walk_forward(
     if len(equity):
         equity = pd.concat([pd.Series([base_cfg.initial_equity], index=[equity.index[0] - pd.Timedelta(days=1)]), equity])
     oos = metrics.summarize(equity, trades, oos_ret) if len(equity) else metrics.trade_stats(trades)
-    n_trials = len(grid)
-    var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if trial_srs and n_trials > 1 else 0.0
+    n_trials = max(len(grid), trials.count(spec.id))
+    var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if any(len(x) > 1 for x in trial_srs) else 0.0
     oos["dsr"] = metrics.deflated_sharpe(oos_ret, n_trials, var)
     oos["expected_max_sharpe_annual"] = metrics.expected_max_sharpe(n_trials, var) * np.sqrt(metrics.PERIODS_PER_YEAR)
     oos["positive_folds"] = float(np.mean([f.test_return > 0 for f in folds])) if folds else 0.0
@@ -196,6 +207,6 @@ def walk_forward(
     return ValidationReport(
         strategy_id=spec.id, version=spec.version, status="validated" if not reasons else "rejected",
         reasons=reasons, n_trials=n_trials, oos=oos, folds=folds, param_stability=stability,
-        recommended_params=recommended, warnings=list(dict.fromkeys(warnings)),
+        recommended_params=recommended, warnings=list(dict.fromkeys(warnings)), n_trials_this_run=len(grid),
         oos_returns=oos_ret, oos_trades=trades,
     )
