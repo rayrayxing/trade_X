@@ -1,0 +1,25 @@
+id: stk-macd-trend-candle
+version: 1
+asset_class: stocks
+hypothesis: A MACD signal-line cross in the direction of the 50-day trend, confirmed by a bullish or bearish candlestick vote at the 20-day EMA, times trend continuation.
+universe: [SPY, QQQ, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
+timeframes: {signal: D1, filter: W1}
+features:
+  macd:   {fn: talib.MACD, output: macd}
+  macds:  {fn: talib.MACD, output: macdsignal}
+  ema20:  {fn: talib.EMA, period: 20}
+  ema_w:  {fn: talib.EMA, period: 20, tf: W1}
+  candles: {fn: pattern.candle_score, patterns: [CDLENGULFING, CDLHAMMER, CDLMORNINGSTAR, CDLPIERCING, CDLSHOOTINGSTAR, CDLEVENINGSTAR, CDLDARKCLOUDCOVER], at_level: ema20, tolerance_atr: 0.6}
+entry:
+  long:  "cross_above(macd, macds) and close > ema_w and shift(candles, 1) + candles > 0"
+  short: "cross_below(macd, macds) and close < ema_w and shift(candles, 1) + candles < 0"
+exit:
+  stop_atr: 1.5
+  target_r: 2.0
+  max_bars: 15
+holding: {expected_hours: 200}
+filters: [no_earnings_3d]
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.0, 2.0], target_r: [1.5, 3.0]}
+provenance: {source: "momentum plus candlestick confirmation", author: claude, created: 2026-10-03}
+status: proposed

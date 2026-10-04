@@ -1,0 +1,22 @@
+id: stk-rsi2-meanrev
+version: 1
+asset_class: stocks
+hypothesis: Index ETFs in a long-term uptrend that become very short-term oversold (2-period RSI) bounce within a few days.
+universe: [SPY, QQQ, IWM]
+timeframes: {signal: D1}
+features:
+  rsi2:   {fn: talib.RSI, period: 2}
+  ema200: {fn: talib.EMA, period: 200}
+  ema5:   {fn: talib.EMA, period: 5}
+entry:
+  long: "close > ema200 and rsi2 < 10"
+exit:
+  stop_atr: 2.5
+  target_r: 1.5
+  max_bars: 7
+  long_when: "close > ema5"
+holding: {expected_hours: 72}
+sizing: {model: kelly_fraction, cap_risk_pct: 3}
+search_space: {stop_atr: [1.5, 3.5], features.ema200.period: [100, 200]}
+provenance: {source: "short-term mean reversion family (2-period RSI)", author: claude, created: 2026-10-03}
+status: proposed
