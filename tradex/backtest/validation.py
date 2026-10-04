@@ -30,6 +30,18 @@ class Thresholds:
     max_drawdown: float = -0.50            # aggressive style: tolerate deep but not ruinous drawdowns
     min_positive_folds: float = 0.5        # share of test folds that must make money
 
+    @classmethod
+    def from_config(cls, path=None) -> "Thresholds":
+        """Load the protected thresholds file (config/gates/thresholds.yaml); defaults if absent."""
+        from pathlib import Path
+
+        import yaml
+        p = Path(path) if path else Path(__file__).resolve().parents[2] / "config" / "gates" / "thresholds.yaml"
+        if not p.exists():
+            return cls()
+        d = yaml.safe_load(p.read_text()) or {}
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
 
 @dataclass
 class WalkForwardConfig:
@@ -104,7 +116,7 @@ def walk_forward(
     filter_ctx: dict | None = None,
 ) -> ValidationReport:
     wf = wf or WalkForwardConfig()
-    th = thresholds or Thresholds()
+    th = thresholds or Thresholds.from_config()
     base_cfg = engine_cfg or EngineConfig()
     costs = costs or model_for(spec.asset_class)
     grid = spec.param_grid(wf.grid_points, wf.max_trials, wf.seed)

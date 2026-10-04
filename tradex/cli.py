@@ -1,4 +1,5 @@
-"""Command line: tradex check | backtest | validate | select | fetch | compare-feeds."""
+"""Command line: tradex check | backtest | validate | select | fetch | compare-feeds |
+replay | why | verify-ledger | filters | command."""
 from __future__ import annotations
 
 import argparse
@@ -104,7 +105,36 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--cache", default="data/cache")
     cf.add_argument("--out", default="reports/feed_comparison.md")
 
+    r = sub.add_parser("replay", help="run the trading core over recorded bars into a ledger")
+    r.add_argument("--strategies", default="strategies")
+    r.add_argument("--data", required=True, help="directory of {SYMBOL}_{TF}.csv files")
+    r.add_argument("--tf", required=True, help="signal timeframe; strategies on other timeframes are skipped")
+    r.add_argument("--ledger", default="data/ledger/replay.sqlite")
+    r.add_argument("--start")
+    r.add_argument("--end")
+    r.add_argument("--calendar", nargs="*", default=["data/calendar"], help="event files or directories")
+    r.add_argument("--treat-all-as-qualified", action="store_true",
+                   help="let unvalidated strategies vote in the ensemble (testing only)")
+    r.add_argument("--check-parity", action="store_true", help="run twice and compare decision digests")
+
+    w = sub.add_parser("why", help="print every ledger row for one decision ID")
+    w.add_argument("decision_id")
+    w.add_argument("--ledger", default="data/ledger/replay.sqlite")
+
+    v = sub.add_parser("verify-ledger", help="recompute the ledger's hash chain")
+    v.add_argument("--ledger", default="data/ledger/replay.sqlite")
+
+    fl = sub.add_parser("filters", help="what each gate's blocked plans would have earned (counterfactual ledger)")
+    fl.add_argument("--ledger", default="data/ledger/replay.sqlite")
+
+    cm = sub.add_parser("command", help="queue pause | resume | flatten for the core")
+    cm.add_argument("name", choices=["pause", "resume", "flatten"])
+    cm.add_argument("--ledger", default="data/ledger/live.sqlite")
+
     a = ap.parse_args(argv)
+
+    if a.cmd in ("replay", "why", "verify-ledger", "filters", "command"):
+        return _spine_commands(a)
 
     if a.cmd == "check":
         bad = 0
@@ -182,6 +212,75 @@ def main(argv: list[str] | None = None) -> int:
         Path(a.out).write_text(text)
         Path(a.out).with_suffix(".json").write_text(json.dumps([r.to_dict() for r in results], indent=2))
         print(text)
+        return 0
+    return 1
+
+
+def _calendar_files(paths: list[str]) -> list[Path]:
+    out: list[Path] = []
+    for p in map(Path, paths):
+        if p.is_dir():
+            out += sorted(x for x in p.iterdir() if x.suffix in (".yaml", ".yml", ".csv"))
+        elif p.exists():
+            out.append(p)
+    return out
+
+
+def _spine_commands(a) -> int:
+    from tradex.core.counterfactual import filter_report
+    from tradex.core.ledger import Ledger
+
+    if a.cmd == "replay":
+        from tradex.core.loop import QUALIFIED, CoreConfig
+        from tradex.core.replay import run_replay
+        from tradex.events import EventCalendar
+        specs = [s for s in load_dir(a.strategies) if s.signal_tf == a.tf and not s.validate()]
+        if not specs:
+            raise SystemExit(f"no valid strategies on timeframe {a.tf}")
+        prov = CsvProvider(a.data)
+        frames = {}
+        for s in specs:
+            s.universe = [u for u in s.universe if not u.startswith("$")]
+            for sym in s.universe:
+                if sym not in frames and prov.path(sym, a.tf).exists():
+                    frames[sym] = prov.get_bars(sym, a.tf)
+        if not frames:
+            raise SystemExit("no data found; run `tradex fetch` first")
+        cal = EventCalendar.load(_calendar_files(a.calendar))
+        statuses = set(QUALIFIED) | ({"proposed", "backtested"} if a.treat_all_as_qualified else set())
+        cfg = CoreConfig(qualified_statuses=statuses)
+        start = pd.Timestamp(a.start, tz="UTC") if a.start else None
+        end = pd.Timestamp(a.end, tz="UTC") if a.end else None
+        Path(a.ledger).unlink(missing_ok=True)
+        res = run_replay(specs, frames, Ledger(a.ledger, run_id="replay"), start, end, cal, cfg=cfg)
+        print(json.dumps(res.summary, indent=2))
+        print(f"chain ok: {res.chain_ok}  decision digest: {res.digest[:16]}")
+        if a.check_parity:
+            again = run_replay(specs, frames,
+                               Ledger(":memory:", run_id="parity"), start, end, cal, cfg=cfg)
+            same = again.digest == res.digest
+            print("parity: " + ("identical decisions" if same else "DIFFERENT decisions"))
+            return 0 if same else 2
+        return 0 if res.chain_ok else 2
+
+    led = Ledger(a.ledger, read_only=a.cmd != "command")
+    if a.cmd == "why":
+        rows = led.why(a.decision_id)
+        if not rows:
+            raise SystemExit(f"no rows for {a.decision_id}")
+        for r in rows:
+            print(json.dumps(r, indent=2, default=str))
+        return 0
+    if a.cmd == "verify-ledger":
+        ok, bad = led.verify()
+        print("hash chain intact" if ok else f"hash chain broken at row {bad}")
+        return 0 if ok else 2
+    if a.cmd == "filters":
+        print(filter_report(led.rows(kind="counterfactual")).to_string(index=False))
+        return 0
+    if a.cmd == "command":
+        cid = led.add_command(pd.Timestamp.now(tz="UTC").isoformat(), "cli", a.name)
+        print(f"queued {a.name} as command {cid}")
         return 0
     return 1
 

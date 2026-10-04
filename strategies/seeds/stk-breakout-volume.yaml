@@ -1,6 +1,7 @@
 id: stk-breakout-volume
 version: 1
 asset_class: stocks
+family: breakout
 hypothesis: A close above the 50-day high on at least 1.5x average volume marks institutional demand that carries for days. Volume is measured relative to the feed's own average, so the IEX slice works.
 universe: [$watchlist, NVDA, AMD, TSLA, META, AMZN]
 timeframes: {signal: D1}

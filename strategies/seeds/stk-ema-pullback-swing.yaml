@@ -1,6 +1,7 @@
 id: stk-ema-pullback-swing
 version: 1
 asset_class: stocks
+family: trend
 hypothesis: Liquid large caps above a rising 200-day EMA that pull back to the 20-day EMA and close back above it continue higher over days.
 universe: [SPY, QQQ, NVDA, AMD, AAPL, MSFT, META, AMZN, TSLA]
 timeframes: {signal: D1}

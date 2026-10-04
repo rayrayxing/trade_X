@@ -94,6 +94,8 @@ class StrategySpec:
     provenance: dict[str, Any] = field(default_factory=dict)
     status: str = "proposed"
     hypothesis: str = ""
+    family: str = "other"              # one of tradex.core.records.FAMILIES; correlated strategies share a vote
+    stats: dict[str, Any] = field(default_factory=dict)   # measured hit_rate etc. once known
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -124,7 +126,8 @@ class StrategySpec:
             holding=dict(d.get("holding", {})), filters=list(d.get("filters", [])),
             sizing=dict(d.get("sizing", {})), search_space=dict(d.get("search_space", {})),
             provenance=dict(d.get("provenance", {})), status=d.get("status", "proposed"),
-            hypothesis=d.get("hypothesis", ""), raw=d,
+            hypothesis=d.get("hypothesis", ""), family=d.get("family", "other"),
+            stats=dict(d.get("stats", {}) or {}), raw=d,
         )
 
     @classmethod
@@ -163,6 +166,9 @@ class StrategySpec:
             errs.append("timeframes.signal is required")
         if self.status not in STATUSES:
             errs.append(f"status must be one of {STATUSES}")
+        from tradex.core.records import FAMILIES
+        if self.family not in FAMILIES:
+            errs.append(f"family must be one of {list(FAMILIES)}")
         if "expected_hours" not in self.holding:
             errs.append("holding.expected_hours must be declared")
         if self.asset_class == "forex" and "crosses_rollover" not in self.holding:

@@ -1,6 +1,7 @@
 id: stk-rsi2-meanrev
 version: 1
 asset_class: stocks
+family: mean_reversion
 hypothesis: Index ETFs in a long-term uptrend that become very short-term oversold (2-period RSI) bounce within a few days.
 universe: [SPY, QQQ, IWM]
 timeframes: {signal: D1}

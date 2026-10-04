@@ -1,6 +1,7 @@
 id: fx-rsi-range-reversion
 version: 1
 asset_class: forex
+family: mean_reversion
 hypothesis: When hourly trend strength is low, RSI extremes near Bollinger bands revert toward the mean.
 universe: [EUR_USD, AUD_USD, EUR_JPY]
 timeframes: {signal: H1}

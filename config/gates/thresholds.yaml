@@ -1,0 +1,7 @@
+# Validation gate thresholds (stage 3). PROTECTED PATH: agents cannot change this file.
+# Defaults from the thread-1 design doc; tune from simulation with a commit from Ray.
+min_trades: 100
+min_profit_factor: 1.2
+min_dsr: 0.95
+max_drawdown: -0.50
+min_positive_folds: 0.5
