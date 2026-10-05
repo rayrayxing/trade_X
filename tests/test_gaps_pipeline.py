@@ -217,7 +217,6 @@ def test_inbox_rows_are_applied_once_and_ignored_actions_do_not_crash(tmp_path):
     assert led.verify() == (True, None)
 
 
-@known_gap("G10", "ingest marks the inbox row applied before the ledger row is written: a crash in between loses the request")
 def test_g10_a_crash_while_recording_leaves_the_request_pending_for_retry(tmp_path):
     led, _ = _inbox_ledger(tmp_path)
     real = led.append

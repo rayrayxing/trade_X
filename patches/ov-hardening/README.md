@@ -1,6 +1,6 @@
 # Patches from the hardening pass (claude/ov-hardening)
 
-For Ray: two of these touch protected paths, so they are patch files, not commits. Nothing here is applied.
+For Ray: two of these touch protected paths, so they are patch files, not commits. Nothing here is applied. (The lane-owned patch, `lane-fixes-g1-g10`, was applied as a commit on 5 Oct and removed from this folder.)
 Each patch also deletes the strict-xfail markers of the gap tests it fixes (`tests/test_gaps_*.py`), so the
 suite stays green after it is applied. Check with `git apply --check patches/ov-hardening/<file>` first.
 
@@ -8,7 +8,6 @@ suite stays green after it is applied. Check with `git apply --check patches/ov-
 |---|---|---|---|
 | `execution-guard-g2.patch` | `tradex/execution/guard.py` (protected) | G2, and the guard half of G1 | Ray |
 | `protected-path-check-s7.patch` | `tools/check_protected_paths.py` (protected) | S7 | Ray's decision (see below) |
-| `lane-fixes-g1-g10.patch` | `tradex/core/inbox.py`, `tradex/core/ledger.py` | G1 (trigger forging), G10 (lost inbox request) | the lane owners, or Ray; not protected |
 
 ## execution-guard-g2.patch
 
@@ -33,10 +32,17 @@ changes `config/risk/`, `config/gates/`, `tradex/risk/`, `tradex/execution/`, `.
 red the lane PRs already open that touch those paths. `test_protected_paths_check` is updated to match. Skip this patch
 if you prefer to keep reviewing those PRs by eye.
 
-## lane-fixes-g1-g10.patch
+## Applied: lane fixes (G1 trigger forging, G10 lost inbox request) and H1, H2, H3
 
-- `Mailbox` authorizer now also denies CREATE/DROP TRIGGER, CREATE VIEW, ATTACH/DETACH, writes to `sqlite_master`, and
-  every PRAGMA except a read-only list (`writable_schema` was the second way to plant a trigger).
-- `Ledger` (writer) refuses to open a file that has any trigger in it: the schema defines none.
-- `ingest_inbox` writes the `agent_output` ledger row before it marks the inbox row applied, so a crash in between
-  re-runs the (idempotent) handler instead of losing the request.
+Applied as commits, because none of it is in a protected path:
+
+- `Mailbox` authorizer denies CREATE/DROP TRIGGER, CREATE VIEW, ATTACH/DETACH, writes to `sqlite_master` and every PRAGMA
+  except a read-only list; `Ledger` (writer) refuses a file that has any trigger; `ingest_inbox` records the
+  `agent_output` row before marking the inbox row applied.
+- H1: a `chain_head` table (newest seq + hash) is rewritten in the same transaction as every append and `verify()`
+  compares the chain's tail with it, so rows cut off the end are noticed. Mailbox cannot write it. A file from before
+  the anchor existed is anchored on its first write by the core. Not a defence against someone who can edit both tables
+  and recompute hashes: keep a copy of the head outside the file (daily Telegram line or export) as the next step.
+- H2: `Ledger.append` takes the write lock (`BEGIN IMMEDIATE`) before it reads the chain head, so writers on one file queue.
+- H3: `shift`, `rising`, `falling` and the `rolling_*` helpers accept only whole, non-negative (shift) or positive counts,
+  so a rule cannot look at future bars. The look-ahead detector's negative control restores the unchecked `shift` itself.

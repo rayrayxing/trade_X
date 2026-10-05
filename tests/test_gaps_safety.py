@@ -97,13 +97,17 @@ def _plant_and_trigger_core(led, mb):
     ingest_inbox(led, T0.isoformat(), {})
 
 
-@known_gap("G1", "Mailbox's authorizer does not deny CREATE TRIGGER, so a trigger runs with the core's rights")
 def test_g1_mailbox_cannot_plant_a_trigger(lm):
     _, mb, _ = lm
     assert not _try_sql(mb, FORGE_TRIGGER)
 
 
-@known_gap("G1", "a planted trigger forges a hash-chain row the next time the core touches agent_inbox")
+def test_h1_mailbox_cannot_move_the_chain_head(lm):
+    _, mb, _ = lm
+    assert not _try_sql(mb, "UPDATE chain_head SET seq = 0")
+    assert not _try_sql(mb, "DELETE FROM chain_head")
+
+
 def test_g1_core_activity_never_forges_ledger_rows(lm):
     led, mb, _ = lm
     _plant_and_trigger_core(led, mb)
@@ -130,7 +134,6 @@ def test_g1_order_guard_refuses_a_verdict_row_the_chain_does_not_vouch_for(lm):
     assert raised(OrderRefused, guard.check, req, "acct", [])
 
 
-@known_gap("G1", "writable_schema lets the mailbox edit sqlite_master, which installs the same trigger and survives a reopen")
 def test_g1_mailbox_cannot_install_a_trigger_through_the_schema_table(lm):
     led, mb, path = lm
     body = FORGE_TRIGGER.replace("TRIGGER forge ", "TRIGGER forge2 ").replace("'", "''")
@@ -148,7 +151,6 @@ def test_g1_mailbox_cannot_install_a_trigger_through_the_schema_table(lm):
     assert core_side.verify() == (True, None) and core_side.rows(kind="verdict") == []
 
 
-@known_gap("G1", "ATTACH is allowed on the mailbox connection (a second file the core's SQL could be pointed at)")
 def test_g1_mailbox_cannot_attach_databases(lm):
     _, mb, _ = lm
     assert not _try_sql(mb, "ATTACH DATABASE ':memory:' AS other")
