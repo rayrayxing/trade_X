@@ -228,6 +228,24 @@ class Close(Record):
 
 
 @dataclass
+class Financing(Record):
+    """Financing a venue booked on one open trade (Oanda DAILY_FINANCING); negative is a cost.
+    The venue's net P&L on the closing fill already includes it (the Close row keeps the
+    venue's number), so this row is for reports that split carry out, not for summing in."""
+    time: str
+    venue: str
+    account: str                      # the agent account's name in config/accounts.yaml, never its venue ID
+    symbol: str
+    decision_id: str
+    amount: float | None              # in the account currency; None when the venue reports USD only
+    currency: str                     # the account currency
+    amount_usd: float
+    txn_id: str                       # the venue's transaction ID: ingestion is idempotent by it
+    book: str = "ensemble"
+    kind: str = field(init=False, default="financing")
+
+
+@dataclass
 class Counterfactual(Record):
     """What a rejected or vetoed plan would have done, followed with the same exit rules."""
     decision_id: str
@@ -288,6 +306,6 @@ class Health(Record):
 
 RECORD_TYPES: dict[str, type[Record]] = {
     c.__dataclass_fields__["kind"].default: c  # type: ignore[attr-defined]
-    for c in (Vote, TradePlan, Veto, Verdict, Order, Fill, ExitChange, Close, Counterfactual,
+    for c in (Vote, TradePlan, Veto, Verdict, Order, Fill, ExitChange, Close, Financing, Counterfactual,
               EquitySnapshot, ConfigVersion, AgentOutput, Health)
 }
