@@ -160,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--dry", action="store_true", help="connect no broker, fetch nothing, print a readiness summary")
     rn.add_argument("--strategies", default="strategies")
     rn.add_argument("--runtime-config", default=None, help="default config/runtime.yaml")
+    rn.add_argument("--ledger", default="data/ledger/live.sqlite", help="the ledger a real (non-dry) run writes")
 
     a = ap.parse_args(argv)
 
@@ -274,18 +275,24 @@ def _run(a) -> int:
     from tradex.data.oanda import PriceStream, QuoteBook, instruments_to_stream
     from tradex.runtime.build import VenuesMissing, build_runtime
     from tradex.runtime.config import RuntimeConfig
-    if not a.dry:   # nothing to connect to yet: no ledger file, no fetch
-        print("refusing to start: no venue adapters yet (they live in tradex/execution and need Ray); "
-              "use --dry", file=sys.stderr)
+    if not a.dry and a.mode != "paper":
+        print("refusing to start: live mode is not allowed in phase 1 (paper accounts only)", file=sys.stderr)
         return 2
     specs = [s for s in load_dir(a.strategies) if not s.validate()]
     cfg = RuntimeConfig.load(a.runtime_config)
+    if not a.dry:
+        from tradex.runtime.paper import run_paper
+        return run_paper(specs, a.ledger, cfg)
+    from tradex.runtime.feed import PolledBarFeed
     fx = sorted({u for s in specs if s.asset_class == "forex" for u in s.universe if not u.startswith("$")})
+    stk = sorted({u for s in specs if s.asset_class == "stocks" and s.status not in ("retired", "rejected")
+                  for u in s.universe if not u.startswith("$")})
+    feeds = {"stocks": PolledBarFeed(AlpacaProvider(), stk, "H1")} if stk else {}
     try:
         rt = build_runtime(a.mode, specs, Ledger(":memory:", run_id="dry"),
                            history={"forex": OandaProvider(), "stocks": AlpacaProvider()},
                            stream=PriceStream(instruments_to_stream(fx)), quotes=QuoteBook(cfg.quote_max_age_s),
-                           config=cfg, has_secret=secrets.has, dry=True)
+                           feeds=feeds, config=cfg, has_secret=secrets.has, dry=True)
     except (SyntheticDataRefused, RealDataMissing, VenuesMissing, ValueError) as exc:
         print(f"refusing to start: {exc}", file=sys.stderr)
         return 2

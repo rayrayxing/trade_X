@@ -93,3 +93,47 @@ class StreamFeed:
             since = self._last_seen.isoformat() if self._last_seen is not None else "start"
             self.health("feed", not stale, f"Oanda stream silent since {since}" if stale else "Oanda stream back", ts)
         self.stale = stale
+
+
+class PolledBarFeed:
+    """A live bar feed for an asset class without a stream (US stocks): at each close it asks
+    a real bar provider (Alpaca, OpenD) for the base-timeframe bars since the last one in
+    the store and appends those that have closed. A failed poll is a fault for that symbol
+    (its bar simply is not there, so the core does nothing for it); nothing is filled in.
+    ``bind`` is called by ``build_runtime`` with the bar store and the core's health hook."""
+
+    def __init__(self, provider, symbols: Iterable[str], tf: str, lookback_bars: int = 5):
+        from tradex.timeframes import duration
+        self.provider, self.symbols, self.tf = provider, sorted(symbols), tf
+        self.bar = duration(tf)
+        self.lookback = lookback_bars
+        self.store = None
+        self.health: HealthFn | None = None
+        self._last: pd.Timestamp | None = None
+        self._failing: set[str] = set()
+
+    def bind(self, store, health: HealthFn) -> None:
+        self.store, self.health = store, health
+
+    def before_close(self, tf: str, ts: pd.Timestamp) -> None:
+        if self._last is not None and ts <= self._last:
+            return                                        # several timeframes close at once: poll once
+        self._last = ts
+        for sym in self.symbols:
+            have = self.store.last_time(sym) if sym in self.store.frames else None
+            start = have - self.bar if have is not None else ts - self.bar * self.lookback
+            try:
+                df = self.provider.get_bars(sym, self.tf, start.isoformat(), ts.isoformat())
+            except Exception as exc:  # noqa: BLE001 - one symbol's poll failing must not stop the rest
+                self._failing.add(sym)
+                if self.health is not None:
+                    self.health("feed", False, f"{sym} {self.tf} bars not polled: {type(exc).__name__}: {exc}", ts)
+                continue
+            if sym in self._failing:
+                self._failing.discard(sym)
+                if self.health is not None:
+                    self.health("feed", True, f"{sym} {self.tf} bars polled again", ts)
+            if df is not None and len(df):
+                done = df[df.index + self.bar <= ts]
+                if len(done):
+                    self.store.append(sym, done)

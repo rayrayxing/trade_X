@@ -170,7 +170,15 @@ def test_cli_dry_run_prints_readiness_without_a_broker(tmp_path, capsys, monkeyp
 
 
 def test_cli_real_run_refuses_without_venue_adapters(tmp_path, capsys, monkeypatch):
+    import sys
+
+    import tradex.secrets
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tradex.secrets, "has", lambda name: True)
+    import tradex.execution
+    for name in ("oanda", "moomoo"):                                     # adapters unimportable: never connects
+        monkeypatch.setitem(sys.modules, f"tradex.execution.{name}", None)
+        monkeypatch.delattr(tradex.execution, name, raising=False)
     _write_fx_strategy(tmp_path / "s")
-    assert main(["run", "--mode", "paper", "--strategies", "s"]) == 2
-    assert "tradex/execution" in capsys.readouterr().err
+    assert main(["run", "--mode", "paper", "--strategies", "s"]) == 1
+    assert "tradex/execution/oanda.py is not there" in capsys.readouterr().err
