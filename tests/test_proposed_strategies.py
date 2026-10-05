@@ -22,7 +22,7 @@ PLANNED = [p for p in gate.PLANS if p.spec is not None and p.spec.parent == gate
 
 
 def test_proposed_specs_validate_and_are_never_marked_validated():
-    assert len(SPECS) == 12        # the 11 first proposals plus etf-vix-panic-rebound (Cboe VIX)
+    assert len(SPECS) == 13        # the 11 first proposals, etf-vix-panic-rebound (Cboe VIX), etf-pre-fomc-drift-d1
     for s in SPECS.values():
         assert s.validate() == [], s.id
         assert s.status == "proposed" and s.provenance["author"] == "claude"
@@ -196,6 +196,32 @@ def test_pre_fomc_strategy_holds_from_24h_before_to_just_before_the_statement(tm
     assert leave.strftime("%Y-%m-%d %H:%M") == "2024-01-31 13:30"           # 30 minutes before the 14:00 statement
     assert t.bars_held == 7
     check_causal(spec, data["SPY"])
+
+
+def test_daily_pre_fomc_holds_from_the_prior_close_to_the_statement_day_close(tmp_path, monkeypatch):
+    root = tmp_path / "opend"
+    for i, s in enumerate(SPECS["etf-pre-fomc-drift-d1"].universe):
+        CsvProvider(root).save(s, "D1", ny_daily(60, seed=i, start="2023-12-01"))
+    f = tmp_path / "fomc.csv"
+    f.write_text("time\n" + FOMC[0].isoformat() + "\n")
+    monkeypatch.setattr(builders, "FOMC_FILE", f)
+    spec = SPECS["etf-pre-fomc-drift-d1"]
+    assert spec.fill == "next_close" and "etf-pre-fomc-drift-h1" in spec.provenance["shares_trials_with"]
+    data, missing = builders.fomc_daily(spec, root)
+    assert not missing
+    spy = data["SPY"]
+    res = run_backtest(spec, {"SPY": spy}, cfg=EngineConfig(risk_pct=1.0))
+    assert len(res.trades) == 1
+    t = res.trades.iloc[0]
+    day = lambda ts: (pd.Timestamp(ts) - pd.Timedelta(days=1)).tz_convert(NY).date().isoformat()   # bar closed at ts
+    assert day(t.entry_time) == "2024-01-30" and day(t.exit_time) == "2024-01-31"
+    pos = {d.date().isoformat(): i for i, d in enumerate(spy.index.tz_convert(NY))}
+    assert t.entry_price == pytest.approx(spy.close.iloc[pos["2024-01-30"]], rel=1e-3)
+    assert t.exit_price == pytest.approx(spy.close.iloc[pos["2024-01-31"]], rel=1e-3)
+    # the flags read the schedule and the session calendar only: other prices on the same sessions, same flags
+    from tradex.research.events import daily_event_columns
+    other = ny_daily(60, seed=99, start="2023-12-01")
+    assert (daily_event_columns(other, FOMC).to_numpy() == spy[["evt_enter", "evt_leave"]].to_numpy()).all()
 
 
 def test_pre_fomc_needs_the_historical_calendar(tmp_path, monkeypatch):

@@ -1,7 +1,8 @@
 """Bar-by-bar portfolio backtester with full trading costs.
 
 Rules that keep results honest:
-- Signals use closed bars only; orders fill at the NEXT bar's open.
+- Signals use closed bars only; orders fill at the NEXT bar's open (or, for a spec with
+  ``fill: next_close``, at the next bar's close: a market-on-close order placed a bar ahead).
 - Stops and targets are checked inside each bar; if both are touched in one bar the
   stop is assumed to hit first. A gap through the stop fills at the open.
 - Every fill pays half the spread plus slippage; every order pays broker and
@@ -166,6 +167,7 @@ def run_backtest(
     trades: list[Trade] = []
     eq_index, eq_values = [], []
     is_stock = spec.asset_class == "stocks"
+    at_close = spec.fill == "next_close"
 
     def b2u(sym: str, price: float, ts) -> float:
         """USD value of one unit of the instrument's price movement (quote ccy -> USD)."""
@@ -233,6 +235,54 @@ def run_backtest(
             p.meta["event_reduced"] = True
         return True
 
+    def fill_exit(sym: str, ts, px: float) -> None:
+        if sym in pending_exit and sym in open_pos:
+            reason, frac = pending_exit[sym]
+            if close(sym, ts, px, reason, frac):
+                pending_exit.pop(sym)
+        elif sym in pending_exit:
+            pending_exit.pop(sym)
+
+    def fill_entry(sym: str, s: dict, i: int, ts, px: float) -> None:
+        nonlocal cash
+        if sym not in pending_entry or sym in open_pos:
+            return
+        direction = pending_entry.pop(sym)
+        prev_atr = s["atr"][i - 1] if i > 0 else np.nan
+        if np.isnan(prev_atr) or prev_atr <= 0:
+            return
+        eq = equity_now(last_marks)
+        fill, unit = costs.fill(sym, direction, px, ts)
+        stop_dist = spec.exit.stop_atr * prev_atr
+        stop = fill - direction * stop_dist
+        target = fill + direction * spec.exit.target_r * stop_dist
+        bu = b2u(sym, fill, ts)
+        rp = cfg.risk_pct
+        if cfg.size_fn is not None:
+            rp = cfg.size_fn({"spec": spec, "symbol": sym, "time": ts, "equity": eq})
+        rp = min(rp, spec.cap_risk_pct)
+        risk_usd = eq * rp / 100.0
+        qty = risk_usd / (stop_dist * bu)
+        room = eq * cfg.max_leverage - gross_long_notional(last_marks)
+        qty = min(qty, max(0.0, room) / (fill * bu))
+        qty = float(np.floor(qty))
+        heat = sum(p.risk_usd for p in open_pos.values())
+        if qty >= 1 and len(open_pos) < cfg.max_positions and \
+                heat + qty * stop_dist * bu <= eq * cfg.max_heat_pct / 100.0 + 1e-9:
+            fees = sum(costs.order_fees(sym, direction, qty, fill, ts).values())
+            cash -= fees
+            op = OpenPosition(
+                symbol=sym, asset_class=spec.asset_class, strategy_id=spec.id,
+                direction=direction, qty=qty, entry_time=ts, entry_price=fill, stop=stop,
+                target=target, initial_risk=stop_dist, max_bars=spec.exit.max_bars,
+                best_price=fill, base_to_usd=bu,
+            )
+            open_pos[sym] = _Pos(
+                p=op, entry_fill=fill, risk_usd=qty * stop_dist * bu,
+                spread_slip=(unit["spread"] + unit["slippage"]) * qty * bu, fees=fees,
+                last_accrual=ts, entry_date=ts.tz_convert(NY).date(),
+            )
+
     last_marks: dict[str, float] = {}
     for ts in sorted(timeline):
         for sym, i in timeline[ts]:
@@ -240,57 +290,18 @@ def run_backtest(
             o, h, l, c, atr = s["o"][i], s["h"][i], s["l"][i], s["c"][i], s["atr"][i]
             bar_end = ts + bar_td
 
-            # a. exits decided at the previous close fill at this open
-            if sym in pending_exit and sym in open_pos:
-                reason, frac = pending_exit[sym]
-                if close(sym, ts, o, reason, frac):
-                    pending_exit.pop(sym)
-            elif sym in pending_exit:
-                pending_exit.pop(sym)
-
-            # b. entries decided at the previous close fill at this open
-            if sym in pending_entry and sym not in open_pos:
-                direction = pending_entry.pop(sym)
-                prev_atr = s["atr"][i - 1] if i > 0 else np.nan
-                if not np.isnan(prev_atr) and prev_atr > 0:
-                    eq = equity_now(last_marks)
-                    fill, unit = costs.fill(sym, direction, o, ts)
-                    stop_dist = spec.exit.stop_atr * prev_atr
-                    stop = fill - direction * stop_dist
-                    target = fill + direction * spec.exit.target_r * stop_dist
-                    bu = b2u(sym, fill, ts)
-                    rp = cfg.risk_pct
-                    if cfg.size_fn is not None:
-                        rp = cfg.size_fn({"spec": spec, "symbol": sym, "time": ts, "equity": eq})
-                    rp = min(rp, spec.cap_risk_pct)
-                    risk_usd = eq * rp / 100.0
-                    qty = risk_usd / (stop_dist * bu)
-                    room = eq * cfg.max_leverage - gross_long_notional(last_marks)
-                    qty = min(qty, max(0.0, room) / (fill * bu))
-                    qty = float(np.floor(qty))
-                    heat = sum(p.risk_usd for p in open_pos.values())
-                    if qty >= 1 and len(open_pos) < cfg.max_positions and \
-                            heat + qty * stop_dist * bu <= eq * cfg.max_heat_pct / 100.0 + 1e-9:
-                        fees = sum(costs.order_fees(sym, direction, qty, fill, ts).values())
-                        cash -= fees
-                        op = OpenPosition(
-                            symbol=sym, asset_class=spec.asset_class, strategy_id=spec.id,
-                            direction=direction, qty=qty, entry_time=ts, entry_price=fill, stop=stop,
-                            target=target, initial_risk=stop_dist, max_bars=spec.exit.max_bars,
-                            best_price=fill, base_to_usd=bu,
-                        )
-                        open_pos[sym] = _Pos(
-                            p=op, entry_fill=fill, risk_usd=qty * stop_dist * bu,
-                            spread_slip=(unit["spread"] + unit["slippage"]) * qty * bu, fees=fees,
-                            last_accrual=ts, entry_date=ts.tz_convert(NY).date(),
-                        )
+            # a, b. exits, then entries, decided at the previous close fill at this open
+            # (with ``fill: next_close`` they fill at this bar's close instead, after the stop check)
+            if not at_close:
+                fill_exit(sym, ts, o)
+                fill_entry(sym, s, i, ts, o)
 
             # c. stop / target inside the bar
             if sym in open_pos:
                 ps = open_pos[sym]
                 p = ps.p
                 d = p.direction
-                entered_now = p.entry_time == ts
+                entered_now = p.entry_time == ts and not at_close
                 hit = None
                 if not entered_now and d * (o - p.stop) <= 0:
                     hit = ("stop_gap", o)
@@ -308,6 +319,12 @@ def run_backtest(
                     if p.stop == p.entry_price and reason.startswith("stop"):
                         reason = reason.replace("stop", "breakeven")
                     close(sym, ts, px, reason, force=reason.startswith(("stop", "breakeven")))
+
+            if at_close:
+                if sym in open_pos:
+                    open_pos[sym].p.bars_held += 1      # held through this bar, entered at an earlier close
+                fill_exit(sym, bar_end, c)
+                fill_entry(sym, s, i, bar_end, c)
 
             # d0. intraday strategies are flat at the session close
             if sym in open_pos and s["sess_end"][i]:
@@ -327,7 +344,8 @@ def run_backtest(
                     ps.hold[k] += v
                     cash -= v
                 ps.last_accrual = bar_end
-                p.bars_held += 1
+                if not at_close:                 # at_close counts the bar before its fills, above
+                    p.bars_held += 1
                 p.best_price = max(p.best_price, c) if p.direction > 0 else min(p.best_price, c)
 
                 snap = MarketSnapshot(time=bar_end, price=c, atr=atr if not np.isnan(atr) else 0.0, bar_hours=bar_hours)

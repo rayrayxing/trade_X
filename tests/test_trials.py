@@ -33,3 +33,17 @@ def test_walk_forward_uses_global_ledger_by_default(stock_data, tmp_path):
     spec = StrategySpec.load("strategies/seeds/stk-ema-pullback-swing.yaml")
     walk_forward(spec, stock_data, wf=WalkForwardConfig(n_folds=2, grid_points=2))
     assert TrialLedger(tmp_path / "trials.sqlite").count(spec.id) == 4   # conftest points the env var here
+
+
+def test_trial_group_counts_every_test_of_the_same_hypothesis(stock_data, tmp_path):
+    led = TrialLedger(tmp_path / "g.sqlite")
+    led.record("a", 1, {"x": 1}, run_id="r1")
+    led.record("b", 1, {"x": 1}, run_id="r2")      # same params under another id: another trial
+    led.record("b", 1, {"x": 2}, run_id="r2")
+    assert led.count_group(["a", "b", "a"]) == 3 and led.count_group(["c"]) == 0
+    base = StrategySpec.load("strategies/seeds/stk-ema-pullback-swing.yaml")
+    walk_forward(base, stock_data, wf=WalkForwardConfig(n_folds=2, grid_points=2), trials=led)
+    sib = StrategySpec.from_dict({**base.raw, "id": "sibling",
+                                  "provenance": {"shares_trials_with": [base.id]}})
+    rep = walk_forward(sib, stock_data, wf=WalkForwardConfig(n_folds=2, grid_points=2), trials=led)
+    assert rep.n_trials == 8 and led.count(sib.id) == 4

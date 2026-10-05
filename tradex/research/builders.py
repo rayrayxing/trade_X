@@ -17,7 +17,7 @@ import pandas as pd
 from tradex.data.opend import DEFAULT_CACHE as OPEND_CACHE, load_cached
 from tradex.research import panels
 from tradex.research.carry import carry_columns
-from tradex.research.events import earnings_columns, event_window_columns
+from tradex.research.events import daily_event_columns, earnings_columns, event_window_columns
 from tradex.research.regime import regime_columns
 from tradex.research.rel_strength import currency_strength, pair_strength_diff, rs_momentum
 from tradex.research.sources import CsvEarningsCalendar, CsvRateSource, DataUnavailable, FileEventCalendar
@@ -97,6 +97,15 @@ def fomc_window(spec: StrategySpec, cache=None, members=None):
     return {s: panels.with_columns(b, cols[s]) for s, b in data.items()}, [s for s in syms if s not in data]
 
 
+def fomc_daily(spec: StrategySpec, cache=None, members=None):
+    """Daily bars with close-to-close flags around each scheduled FOMC statement (``fill: next_close`` specs)."""
+    syms = _symbols(spec)
+    data = us_bars(syms, spec.signal_tf, cache)
+    times = FileEventCalendar(FOMC_FILE, kind="fomc").times()
+    return {s: panels.with_columns(b, daily_event_columns(b, times)) for s, b in data.items()}, \
+        [s for s in syms if s not in data]
+
+
 def regime_etf(spec: StrategySpec, cache=None, members=None):
     syms = _symbols(spec)
     data = us_bars(syms, spec.signal_tf, cache)
@@ -161,7 +170,7 @@ def preflight(builder: str) -> None:
     are loaded or screened, so the gate says which input is missing rather than "no bars"."""
     if builder == "earnings" and not (EARNINGS_DIR.is_dir() and any(EARNINGS_DIR.glob("*.csv"))):
         raise DataUnavailable(f"no earnings-date files in {EARNINGS_DIR} (python -m tradex.data.earnings SYMBOL ...)")
-    if builder == "fomc_window" and not FOMC_FILE.exists():
+    if builder in ("fomc_window", "fomc_daily") and not FOMC_FILE.exists():
         raise DataUnavailable(f"no FOMC event calendar at {FOMC_FILE}")
     if builder in ("fx_strength", "fx_carry") and not (OANDA_CACHE.is_dir() and any(OANDA_CACHE.glob("*.csv"))):
         raise DataUnavailable(f"no Oanda history in {OANDA_CACHE} (run `python -m tradex.research.universe oanda`)")
@@ -171,6 +180,6 @@ def preflight(builder: str) -> None:
         raise DataUnavailable(f"no rate history at {RATES_FILE}")
 
 
-BUILDERS = {"earnings": earnings, "fomc_window": fomc_window, "regime_etf": regime_etf, "regime_vix": regime_vix,
+BUILDERS = {"earnings": earnings, "fomc_window": fomc_window, "fomc_daily": fomc_daily, "regime_etf": regime_etf, "regime_vix": regime_vix,
             "rs_crash": rs_crash,
             "fx_strength": fx_strength, "fx_carry": fx_carry}

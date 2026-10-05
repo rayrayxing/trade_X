@@ -122,6 +122,7 @@ PLANS = [
     Plan("earnings-day-jump-continuation", _proposed("stk-earnings-jump-continuation"), "earnings", pool="stocks"),
     Plan("post-earnings-announcement-drift", _proposed("stk-pead-ear"), "earnings", pool="stocks"),
     Plan("pre-fomc-announcement-drift", _proposed("etf-pre-fomc-drift-h1"), "fomc_window"),
+    Plan("pre-fomc-announcement-drift", _proposed("etf-pre-fomc-drift-d1"), "fomc_daily"),
     Plan("hidden-markov-regime-allocation", _proposed("etf-risk-on-trend"), "regime_etf"),
     Plan("realised-covariance-regime-detection", _proposed("etf-corr-calm-trend"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound"), "regime_etf"),

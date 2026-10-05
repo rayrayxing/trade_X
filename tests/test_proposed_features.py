@@ -331,3 +331,20 @@ def test_carry_columns_propagate_missing_rates_as_nan():
     cols = carry.carry_columns(bars, "EUR_USD", src)
     assert cols["carry"][bars.index < pd.Timestamp("2022-03-01", tz="UTC")].isna().all()
     assert cols["carry_trend"][bars.index < pd.Timestamp("2022-03-01", tz="UTC")].isna().all()
+
+
+def test_daily_event_columns_flag_two_and_one_sessions_before_the_statement_day():
+    from tradex.research.events import daily_event_columns
+    bars = ny_daily(40, start="2024-01-15")
+    cols = daily_event_columns(bars, FOMC)
+    dates = [d.date().isoformat() for d in session_date_index(bars)]
+    t = dates.index("2024-01-31")
+    assert cols["evt_enter"].to_numpy().nonzero()[0].tolist() == [t - 2]
+    assert cols["evt_leave"].to_numpy().nonzero()[0].tolist() == [t - 1]
+    # a statement on a day without a bar (or too early in the data) is skipped
+    late = pd.DatetimeIndex([pd.Timestamp("2024-01-16 14:00", tz=NY).tz_convert("UTC")])
+    assert daily_event_columns(bars, late).to_numpy().sum() == 0
+
+
+def session_date_index(bars):
+    return bars.index.tz_convert(NY).tz_localize(None).normalize()

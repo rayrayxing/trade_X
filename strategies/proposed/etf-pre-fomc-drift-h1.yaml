@@ -18,5 +18,5 @@ exit:
 holding: {expected_hours: 24}
 sizing: {model: kelly_fraction, cap_risk_pct: 1}
 search_space: {stop_atr: [3.0, 6.0]}
-provenance: {source: "catalog: pre-FOMC announcement drift (needs historical FOMC dates, see research/proposals.md)", author: claude, created: 2026-10-04}
+provenance: {source: "catalog: pre-FOMC announcement drift (needs historical FOMC dates, see research/proposals.md)", author: claude, created: 2026-10-04, shares_trials_with: [etf-pre-fomc-drift-d1]}
 status: proposed
