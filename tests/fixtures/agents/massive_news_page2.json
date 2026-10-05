@@ -1,0 +1,11 @@
+{
+  "status": "OK", "count": 2, "request_id": "fixture-2",
+  "results": [
+    {"id": "m-4", "publisher": {"name": "Reuters"},
+     "title": "NVDA raises data center outlook after supplier checks", "published_utc": "2026-10-02T13:06:00Z",
+     "article_url": "https://example.test/m-4", "tickers": ["NVDA"], "insights": []},
+    {"id": "m-5", "publisher": {"name": "Reuters"},
+     "title": "Published after the cut-off", "published_utc": "2026-10-04T05:00:00Z",
+     "article_url": "https://example.test/m-5", "tickers": ["NVDA"], "insights": []}
+  ]
+}

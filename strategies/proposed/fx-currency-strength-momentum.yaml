@@ -1,0 +1,24 @@
+id: fx-currency-strength-momentum
+version: 1
+asset_class: forex
+family: momentum
+hypothesis: The strongest currency against the weakest over the last quarter keeps its lead for weeks. Rank each pair by base strength minus quote strength and trade the extremes when the pair's own trend agrees (joint time-series and cross-sectional momentum).
+universe: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, USD_CAD, USD_CHF, NZD_USD, EUR_JPY, GBP_JPY]
+timeframes: {signal: D1}
+features:
+  csx: {fn: data.column, name: cs_xs}
+  tsm: {fn: data.column, name: ts_mom}
+entry:
+  long:  "csx >= 0.8 and tsm > 0"
+  short: "csx <= 0.2 and tsm < 0"
+exit:
+  stop_atr: 2.5
+  target_r: 3.0
+  max_bars: 30
+  long_when: "csx < 0.5"
+  short_when: "csx > 0.5"
+holding: {expected_hours: 480, crosses_rollover: true}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 3.5], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: joint time-series and cross-sectional strategy / currency momentum (Menkhoff et al. 2012), FX form", author: claude, created: 2026-10-04}
+status: proposed

@@ -1,0 +1,23 @@
+id: stk-earnings-jump-continuation
+version: 1
+asset_class: stocks
+family: event_drift
+hypothesis: A stock whose earnings reaction session moves more than two standard deviations on heavy volume and closes in the direction of the move keeps drifting that way for the next few sessions.
+universe: [NVDA, AMD, TSLA, META, AMZN, AAPL, MSFT, KO, PEP, XOM, CVX, V, MA, JPM, BAC, GS, MS, HD, LOW, MRK, PFE, WMT, COST, INTC, CSCO, GOOGL, ORCL, UNH, JNJ]
+timeframes: {signal: D1}
+features:
+  edz: {fn: data.column, name: ed_z}
+  eda: {fn: data.column, name: ed_age}
+  edv: {fn: data.column, name: ed_volx}
+entry:
+  long:  "eda == 0 and edz > 2 and edv > 1.5 and close > open"
+  short: "eda == 0 and edz < -2 and edv > 1.5 and close < open"
+exit:
+  stop_atr: 2.0
+  target_r: 2.0
+  max_bars: 5
+holding: {expected_hours: 72}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.5, 3.0], target_r: [1.5, 3.0]}
+provenance: {source: "catalog: earnings-day jump continuation (daily-bar form; needs earnings dates, see research/proposals.md)", author: claude, created: 2026-10-04}
+status: proposed

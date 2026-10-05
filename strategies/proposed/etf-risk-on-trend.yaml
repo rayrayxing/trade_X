@@ -1,0 +1,22 @@
+id: etf-risk-on-trend
+version: 1
+asset_class: stocks
+family: trend
+hypothesis: Equity ETFs in an uptrend do better when the cross-asset picture is risk-on (equities above their 200-day mean, beating bonds and gold, with calm volatility); trade the trend only in that state. A rules-based stand-in for hidden-Markov regime allocation.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB]
+timeframes: {signal: D1}
+features:
+  rgs:    {fn: data.column, name: rg_score}
+  ema100: {fn: talib.EMA, period: 100}
+entry:
+  long: "rgs >= 3 and close > ema100"
+exit:
+  stop_atr: 3.0
+  target_r: 3.0
+  max_bars: 40
+  long_when: "rgs <= 1 or close < ema100"
+holding: {expected_hours: 960}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 4.0], target_r: [2.0, 4.0], features.ema100.period: [50, 150]}
+provenance: {source: "catalog: hidden Markov regime allocation (regime input for the ensemble; no HMM fitted)", author: claude, created: 2026-10-04}
+status: proposed

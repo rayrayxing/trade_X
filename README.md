@@ -21,10 +21,13 @@ environment variables on the machine that runs them.
 | `tradex/risk` | Fractional Kelly on the lower-bound win rate, block-bootstrap ruin simulation with stress cases, leverage gate, drawdown scaling |
 | `tradex/selection` | Regime labels, strategy ranking, correlation clusters, risk-budget split and blending |
 | `tradex/scout` | Daily market scout (10 to 20 stocks): working technical source, interfaces for news, chatter and a Claude headline reviewer, and replay of the scout in backtests |
+| `tradex/agents` | Model gateway, plus the shadow agents: daily scout (news to a 10-20 stock watchlist), two-provider position reviewer, chart reader, incident analyst, Alpaca and Massive news adapters, and the shadow scorecard that scores their proposals against later outcomes |
 | `tradex/pipeline.py` | Morning plan (scout, regime, allocation, universes) and the position-review pass, for thread 3 to schedule |
 | `tradex/core` | The spine: record types, the hash-chained SQLite ledger, Clock / MarketData / Broker interfaces with replay versions, the trading core loop, the counterfactual ledger and the replay harness |
 | `tradex/runtime` | Around the core: bar store (live appends, higher timeframes resampled only once closed), FX rate sources that refuse to guess in paper/live, incremental signals |
 | `tradex/decision` | Ensemble: family votes become one finalised trade plan (entry, stop, targets, time stop) before any risk review |
+| `tradex/dashboard` | Read-only web dashboard over the ledger (`tradex dashboard`): Today, Positions, Decisions, Performance, Strategies, Accounts and system, Readiness. Empty ledger shows empty states, never placeholder numbers |
+| `ops/` | launchd plists, installer, nightly restic backup, healthchecks.io dead-man ping and setup notes for Ray's Mac (see `ops/README.md`) |
 | `tradex/events.py` | Event calendar (central banks, CPI, NFP, earnings, forex weekend) with blackout windows |
 | `tradex/execution` | Simulated broker (next-open fills, brackets, idempotent order IDs, read-only external holdings), pre-trade short and sanity checks, and the order guard every venue adapter submits through (verdict ID, size within verdict, agent-owned account from `config/accounts.yaml`). Protected |
 | `tradex/risk/exposure.py`, `gate.py` | Net open position per currency, expected shortfall with marginal charging, named stress replays, and the risk gate that sizes plans. Protected |
@@ -113,6 +116,36 @@ python -m tradex command pause --ledger runs/live.sqlite
 execution and the CI workflow itself. CI fails any `agent/` branch that touches them.
 Human branches are not checked.
 
+### Shadow agents
+
+`tradex/agents` holds four agents that only ever add `agent_inbox` rows (veto, shrink, close,
+flag) and run in shadow: the core records "would have" and applies nothing.
+
+- **Scout** (`scout_agent.py`): headlines from Alpaca and Massive news (`news.py`) in, 10 to 20
+  names out, each with a justification citing headlines that were in the prompt. Short lists are
+  written short, never padded. One `flag` row, target `watchlist:YYYY-MM-DD`.
+- **Position reviewer** (`position_agent.py`): two voters must answer from different providers (as
+  the response reports them) and both say close with confidence of at least 0.6 before a `close`
+  row is written. Splits, same-provider answers and failures are logged only.
+- **Chart reader** (`chart_agent.py`): reads only bars that have closed by `asof`. With a trade
+  plan it can `veto` or `shrink` that decision; alone it can `flag` a symbol.
+- **Incident analyst** (`incident_agent.py`): reads failed health rows through a read-only ledger
+  handle; a `close`, `veto` or `shrink` needs a target the caller listed (and `close` needs
+  severity high), otherwise it is downgraded to a `flag`.
+
+Every call's full prompt, system text and response is kept in the shadow store
+(`ShadowStore`, its own SQLite file) next to the hashes the gateway writes, and `ReplayGateway`
+re-runs an agent on stored responses. `ShadowScorecard` resolves each proposal against later bars
+or ledger rows (`outcomes.py`) and turns the hit-rate lower bound and mean value into readiness
+evidence. A store is `replay`/not real by default; only rows written with `mode="paper"` or
+`"live"` and `real_data=True` can pass a criterion. The criteria are in `scorecard.AGENT_CRITERIA`;
+`python -m tradex.agents.scorecard --store S --yaml` prints the block that belongs in
+`config/gates/readiness.yaml` (protected path, so a human merges it).
+
+```bash
+python -m tradex.agents.scorecard --store runs/shadow.sqlite
+```
+
 ## Defaults chosen in this build
 
 - **Day-trade cap off.** Ray reports moomoo SG does not apply the US 3-in-5 rule; it can be
@@ -152,7 +185,7 @@ Human branches are not checked.
 - Running the IEX vs Massive comparison needs Ray's API keys, so it runs on his machine.
 - Only 8 of the ~20 seed strategies; more chart patterns (head and shoulders, triangles,
   flags, wedges) are still to add to the registry.
-- News, chatter and the Claude headline reviewer are interfaces; thread 3 connects them.
+- Alpaca and Massive news adapters exist (`tradex/agents/news.py`) but are tested on fixtures shaped from the API docs, not live recordings; chatter (Reddit, StockTwits, X) is still an interface.
 - `data/calendar` ships FOMC, BoJ and ECB decision days for 2026-2027 and the remaining
   2026 CPI dates, with sources. Jobs-report dates, 2027 CPI and earnings dates still need
   importing (BLS publishes an iCalendar feed; Alpha Vantage's free key has an earnings
