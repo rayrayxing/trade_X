@@ -71,6 +71,10 @@ trials="${TRADEX_TRIALS_DB:-$TRADEX_HOME/data/research/trials.sqlite}"
 if [ -f "$trials" ]; then
     "$TRADEX_PYTHON" "$TRADEX_HOME/ops/bin/snapshot_db.py" "$trials" "$stage/trials.sqlite" || fail 1 "trials snapshot failed"
 fi
+loopdb="${TRADEX_LOOP_DB:-$TRADEX_HOME/data/research/loop.sqlite}"      # the weekly research loop's run state and audit trail
+if [ -f "$loopdb" ]; then
+    "$TRADEX_PYTHON" "$TRADEX_HOME/ops/bin/snapshot_db.py" "$loopdb" "$stage/research-loop.sqlite" || fail 1 "research-loop snapshot failed"
+fi
 
 # 2. Back up only what cannot be rebuilt. Bars (data/cache) and the venv are re-downloadable and excluded.
 paths="$stage $TRADEX_HOME/config $TRADEX_HOME/strategies $TRADEX_HOME/reports $TRADEX_HOME/research"

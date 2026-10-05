@@ -15,7 +15,7 @@ from tradex.strategy import expr
 from tradex.ta import registry
 from tradex.timeframes import TIMEFRAMES, align_higher, resample
 
-STATUSES = ["proposed", "backtested", "validated", "paper", "live", "retired", "rejected"]
+STATUSES = ["proposed", "screened", "backtested", "validated", "paper", "live", "retired", "rejected"]
 ASSET_CLASSES = ["stocks", "forex"]
 BAR_NAMES = {"open", "high", "low", "close", "volume"}
 WATCHLIST_TOKEN = "$watchlist"

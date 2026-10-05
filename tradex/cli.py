@@ -1,5 +1,5 @@
 """Command line (also `trade-x`): tradex setup | check | backtest | validate | select | fetch | compare-feeds |
-replay | why | verify-ledger | filters | command | run | dashboard."""
+replay | why | verify-ledger | filters | command | run | dashboard | research loop."""
 from __future__ import annotations
 
 import argparse
@@ -150,6 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--only", nargs="+", metavar="NAME")
     st.add_argument("--status", action="store_true", help="print set/missing per secret and exit")
 
+    from tradex.research.loop.cli import add_parser as add_research_parser
+    add_research_parser(sub)
+
     sub.add_parser("opend-check", help="read-only report on local OpenD: quotas, entitlements, SIMULATE capabilities")
 
     rn = sub.add_parser("run", help="paper/live runtime; --dry builds everything and prints readiness, no broker")
@@ -162,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "run":
         return _run(a)
+    if a.cmd == "research":
+        from tradex.research.loop.cli import run as run_research
+        return run_research(a)
     if a.cmd == "opend-check":
         from tradex.data.opend_check import run
         return run()

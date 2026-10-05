@@ -1,0 +1,23 @@
+# Weekly research loop settings (tradex research loop). Not a protected path; every key is optional and these are
+# the defaults. The stage-3 gate itself is NOT here: it is config/gates/thresholds.yaml (protected), and the loop can
+# only add checks on top of it. Status changes into and out of paper additionally need `--apply`
+# (TRADEX_LOOP_APPLY=1 in ops.env for the launchd job).
+catalog_kinds: [Build]        # catalog status kinds that become ideas
+max_new_ideas: 10             # new ideas per run, all sources together
+max_drafts_per_run: 10
+screen_min_bars: 250          # the screen: the spec's own parameters, research window only, after costs
+screen_min_trades: 30
+screen_min_profit_factor: 1.0
+max_screens_per_run: 20
+max_walk_forwards_per_run: 5  # compute budget per run
+holdout_min_trades: 20        # on top of the gate's profit factor and drawdown limits
+holdout_min_days: 60          # holdout bars must cover at least this many days, or the one look is not used
+max_paper: 5
+max_paper_per_family: 2
+cusum_k: 0.5                  # health: lower CUSUM on daily returns in baseline standard deviations
+cusum_h: 8.0                  # k=0.5, h=8: roughly one false alarm per 10,000 days; catches large departures, not a Sharpe-1 edge fading
+cusum_warn_frac: 0.5
+cusum_mean_shrink: 0.5        # walk-forward mean is optimistic (best params per fold); credit half of it
+health_min_obs: 20
+health_dd_multiple: 1.5
+stale_weeks: 12
