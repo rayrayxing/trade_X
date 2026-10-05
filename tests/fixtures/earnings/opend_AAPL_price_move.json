@@ -1,0 +1,112 @@
+[
+{
+"fiscal_year": 2026,
+"financial_type": "Q3",
+"period_text": "2026/Q3",
+"pub_trading_day_str": "2026-07-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": -5,
+"trading_day_str": "2026-07-23",
+"close_price": 321.382821718
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q3",
+"period_text": "2026/Q3",
+"pub_trading_day_str": "2026-07-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": -2,
+"trading_day_str": "2026-07-28",
+"close_price": 339.786948983
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q3",
+"period_text": "2026/Q3",
+"pub_trading_day_str": "2026-07-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": 1,
+"trading_day_str": "2026-07-31",
+"close_price": 308.643808546
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q3",
+"period_text": "2026/Q3",
+"pub_trading_day_str": "2026-07-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": 4,
+"trading_day_str": "2026-08-05",
+"close_price": 310.732007568
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q2",
+"period_text": "2026/Q2",
+"pub_trading_day_str": "2026-04-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": -4,
+"trading_day_str": "2026-04-24",
+"close_price": 270.577129379
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q2",
+"period_text": "2026/Q2",
+"pub_trading_day_str": "2026-04-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": -1,
+"trading_day_str": "2026-04-29",
+"close_price": 269.688714839
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q2",
+"period_text": "2026/Q2",
+"pub_trading_day_str": "2026-04-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": 2,
+"trading_day_str": "2026-05-04",
+"close_price": 276.336850608
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q2",
+"period_text": "2026/Q2",
+"pub_trading_day_str": "2026-04-30",
+"pub_type": "AFTER_MARKET",
+"day_offset": 5,
+"trading_day_str": "2026-05-07",
+"close_price": 286.927949784
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q1",
+"period_text": "2026/Q1",
+"pub_trading_day_str": "2026-01-29",
+"pub_type": "AFTER_MARKET",
+"day_offset": -3,
+"trading_day_str": "2026-01-26",
+"close_price": 254.716664014
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q1",
+"period_text": "2026/Q1",
+"pub_trading_day_str": "2026-01-29",
+"pub_type": "AFTER_MARKET",
+"day_offset": 0,
+"trading_day_str": "2026-01-29",
+"close_price": 257.578873111
+},
+{
+"fiscal_year": 2026,
+"financial_type": "Q1",
+"period_text": "2026/Q1",
+"pub_trading_day_str": "2026-01-29",
+"pub_type": "AFTER_MARKET",
+"day_offset": 3,
+"trading_day_str": "2026-02-03",
+"close_price": 268.748469592
+}
+]

@@ -1,0 +1,23 @@
+id: stk-earnings-jump
+version: 1
+asset_class: stocks
+family: event_drift
+hypothesis: A large price jump on the earnings reaction day keeps drifting the same way for weeks (post-earnings-announcement drift; earnings-day jump continuation). Reaction day from OpenD's release date and before/after-market timing.
+universe: [AAPL, MSFT, NVDA, AMZN, META, GOOGL]
+timeframes: {signal: D1}
+features:
+  ed: {fn: data.column, name: earn_day}
+  ej: {fn: data.column, name: earn_jump}
+  atrp: {fn: stat.atr_pct, period: 20}
+entry:
+  long:  "ed > 0 and ej > 2 * atrp"
+  short: "ed > 0 and ej < -2 * atrp"
+exit:
+  stop_atr: 2.5
+  target_r: 3.0
+  max_bars: 20
+holding: {expected_hours: 480}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [1.5, 3.5], max_bars: [10, 40]}
+provenance: {source: "catalog: earnings-day jump continuation", author: claude, created: 2026-10-04}
+status: proposed

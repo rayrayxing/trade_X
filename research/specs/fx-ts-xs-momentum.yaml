@@ -1,0 +1,24 @@
+id: fx-ts-xs-momentum
+version: 1
+asset_class: forex
+family: momentum
+hypothesis: The joint time-series and cross-sectional rule on the nine Oanda pairs. Long a pair whose own 12-month return is positive and that ranks in the top 30% of the set; short one whose return is negative and that ranks in the bottom 30%.
+universe: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, USD_CAD, USD_CHF, NZD_USD, EUR_JPY, GBP_JPY]
+timeframes: {signal: D1}
+features:
+  m:  {fn: data.column, name: mom}
+  xs: {fn: data.column, name: mom_xs}
+entry:
+  long:  "m > 0 and xs >= 0.7"
+  short: "m < 0 and xs <= 0.3"
+exit:
+  stop_atr: 3.0
+  target_r: 3.0
+  max_bars: 20
+  long_when: "xs < 0.5 or m < 0"
+  short_when: "xs > 0.5 or m > 0"
+holding: {expected_hours: 480, crosses_rollover: true}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [2.0, 4.0], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: joint time-series and cross-sectional strategy (FX leg)", author: claude, created: 2026-10-04}
+status: proposed

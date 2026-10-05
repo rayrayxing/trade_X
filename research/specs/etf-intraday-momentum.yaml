@@ -1,0 +1,23 @@
+id: etf-intraday-momentum
+version: 1
+asset_class: stocks
+family: momentum
+hypothesis: The market's first-half-hour return predicts its last-half-hour return (Gao, Han, Li and Zhou 2018). With 60-minute bars the signal is the first hour's return from the previous close; trade in its direction from 15:30 and be flat at the 16:00 close.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, TLT, GLD]
+timeframes: {signal: H1}
+features:
+  lf: {fn: data.column, name: last_full}
+  fh: {fn: data.column, name: fh_ret}
+entry:
+  long:  "lf > 0 and fh > 0"
+  short: "lf > 0 and fh < 0"
+exit:
+  stop_atr: 2.0
+  target_r: 3.0
+  max_bars: 2
+  session_close: true
+holding: {expected_hours: 0.5}
+sizing: {model: kelly_fraction, cap_risk_pct: 1}
+search_space: {stop_atr: [1.0, 3.0]}
+provenance: {source: "catalog: intraday momentum (first half-hour predicts last)", author: claude, created: 2026-10-04}
+status: proposed
