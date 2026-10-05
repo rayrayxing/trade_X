@@ -26,8 +26,10 @@ from tradex.timeframes import duration
 
 ROOT = Path(__file__).resolve().parents[2]
 EARNINGS_DIR = ROOT / "data" / "cache" / "earnings"     # tradex.data.earnings writes it
-FOMC_FILE = ROOT / "data" / "calendar" / "fomc_history.csv"
-RATES_FILE = ROOT / "data" / "rates" / "policy_rates.csv"
+MACRO = ROOT / "data" / "cache" / "macro"                  # tradex.data.macro_history writes these three
+FOMC_FILE = MACRO / "fomc_history.csv"
+RATES_FILE = MACRO / "policy_rates.csv"
+VIX_FILE = MACRO / "vix_daily.csv"
 OANDA_CACHE = ROOT / "data" / "cache" / "oanda"
 
 MARKET, BOND, GOLD = "SPY", "TLT", "GLD"
@@ -101,6 +103,23 @@ def regime_etf(spec: StrategySpec, cache=None, members=None):
     return _attach(data, _regime_panel(cache)), [s for s in syms if s not in data]
 
 
+def vix_column(index: pd.DatetimeIndex) -> pd.Series:
+    """Cboe VIX close of each daily bar's own session (bars stamped 00:00 New York). The close prints
+    at 16:15, after the stock close; the engine acts on a bar's signal at the next open, so it is known in time."""
+    if not VIX_FILE.exists():
+        raise DataUnavailable(f"no Cboe VIX history at {VIX_FILE} (python -m tradex.data.macro_history vix)")
+    from tradex.data.macro_history import load_vix
+    vix = load_vix(VIX_FILE)
+    days = index.tz_convert("America/New_York").tz_localize(None).normalize()
+    return pd.Series(vix.reindex(days).to_numpy(), index=index)
+
+
+def regime_vix(spec: StrategySpec, cache=None, members=None):
+    """The regime columns plus ``vix`` (Cboe VIX close)."""
+    data, missing = regime_etf(spec, cache)
+    return {s: panels.with_columns(b, {"vix": vix_column(b.index)}) for s, b in data.items()}, missing
+
+
 def rs_crash(spec: StrategySpec, cache=None, members=None):
     syms = _symbols(spec)
     data = us_bars(syms, spec.signal_tf, cache)
@@ -146,9 +165,12 @@ def preflight(builder: str) -> None:
         raise DataUnavailable(f"no FOMC event calendar at {FOMC_FILE}")
     if builder in ("fx_strength", "fx_carry") and not (OANDA_CACHE.is_dir() and any(OANDA_CACHE.glob("*.csv"))):
         raise DataUnavailable(f"no Oanda history in {OANDA_CACHE} (run `python -m tradex.research.universe oanda`)")
+    if builder == "regime_vix" and not VIX_FILE.exists():
+        raise DataUnavailable(f"no Cboe VIX history at {VIX_FILE}")
     if builder == "fx_carry" and not RATES_FILE.exists():
         raise DataUnavailable(f"no rate history at {RATES_FILE}")
 
 
-BUILDERS = {"earnings": earnings, "fomc_window": fomc_window, "regime_etf": regime_etf, "rs_crash": rs_crash,
+BUILDERS = {"earnings": earnings, "fomc_window": fomc_window, "regime_etf": regime_etf, "regime_vix": regime_vix,
+            "rs_crash": rs_crash,
             "fx_strength": fx_strength, "fx_carry": fx_carry}

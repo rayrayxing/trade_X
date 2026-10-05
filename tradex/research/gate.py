@@ -114,6 +114,7 @@ PLANS = [
     Plan("joint-time-series-and-cross-sectional-strategy", _spec("etf-ts-xs-momentum"), "momentum_xs", pool="etfs"),
     Plan("joint-time-series-and-cross-sectional-strategy", _spec("fx-ts-xs-momentum"), "fx_momentum_xs"),
     Plan("intraday-momentum-first-half-hour-predicts-last", _spec("etf-intraday-momentum"), "sessions", pool="etfs"),
+    Plan("intraday-momentum-first-half-hour-predicts-last", _spec("etf-intraday-momentum-m30"), "sessions", pool="etfs"),
     Plan("earnings-day-jump-continuation", _spec("stk-earnings-jump"), "earn_jump", pool="stocks"),
     # proposed strategies built on the injected-calendar / rate / regime features (research/proposals.md).
     # Stock ones run on the liquidity screen like the specs above; the ETF ones keep their spec universe
@@ -124,6 +125,7 @@ PLANS = [
     Plan("hidden-markov-regime-allocation", _proposed("etf-risk-on-trend"), "regime_etf"),
     Plan("realised-covariance-regime-detection", _proposed("etf-corr-calm-trend"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound"), "regime_etf"),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound"), "regime_vix"),
     Plan("momentum-with-crash-protection-vol-scaled", _proposed("stk-rs-momentum-crash-protected"), "rs_crash", pool="stocks"),
     Plan("joint-time-series-and-cross-sectional-strategy", _proposed("fx-currency-strength-momentum"), "fx_strength"),
     Plan("g10-carry-long-high-rate-short-low-rate", _proposed("fx-carry-trend"), "fx_carry"),
@@ -217,7 +219,7 @@ def build(builder: str, spec: StrategySpec, cache=OPEND_CACHE, members: pd.DataF
                 out[b] = panels.with_columns(data[b], {"pair_z": -z.reindex(data[b].index)})
         data = out
     elif builder == "sessions":
-        data = {s: panels.with_columns(b, panels.session_columns(b)) for s, b in data.items()}
+        data = {s: panels.with_columns(b, panels.session_columns(b, duration(spec.signal_tf))) for s, b in data.items()}
     elif builder == "earn_jump":
         e = earn.Earnings(EARNINGS_CACHE)
         data = {s: panels.with_columns(b, panels.earnings_columns(b, e.load(s))) for s, b in data.items()

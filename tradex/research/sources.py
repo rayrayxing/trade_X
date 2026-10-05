@@ -93,7 +93,7 @@ class FileEventCalendar:
             rows = (yaml.safe_load(self.path.read_text()) or {}).get("events", [])
             ts = [r["time"] for r in rows if self.kind is None or r.get("kind") == self.kind]
         else:
-            df = pd.read_csv(self.path)
+            df = pd.read_csv(self.path, comment="#")
             df.columns = [str(c).strip().lower() for c in df.columns]
             if "time" not in df.columns:
                 raise ValueError(f"{self.path}: needs a 'time' column")
