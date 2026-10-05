@@ -28,9 +28,8 @@ from tradex.research.trials import TrialLedger
 from tradex.strategy.spec import StrategySpec
 
 
-# --- G6: the moomoo import broke CI ---------------------------------------------------------------
+# --- G6: the moomoo import broke CI (fixed on the base; plain regression test now) ------------------
 
-@known_gap("G6", "opend_check.collect imports RET_OK from moomoo at call time, so it fails wherever the SDK is not installed (CI)")
 def test_g6_collect_needs_no_moomoo_sdk(monkeypatch):
     from test_opend_check import Q, T
     from tradex.data.opend_check import collect
