@@ -1,0 +1,104 @@
+{
+ "_note": "FORMAT SAMPLE hand-built from the documented moomoo-api 10.11.7108 columns; the values are test values (year 2031), not a recording of OpenD. Replace with a capture from Ray's Mac.",
+ "rows": [
+  {
+   "title": "Nonfarm Payrolls",
+   "timestamp": 1925213400.0,
+   "country": "United States",
+   "star": "HIGH",
+   "previous": "150K",
+   "consensus": "160K",
+   "actual": "--"
+  },
+  {
+   "title": "Unemployment Rate",
+   "timestamp": 1925213400.0,
+   "country": "United States",
+   "star": "HIGH",
+   "previous": "4.1%",
+   "consensus": "4.1%",
+   "actual": "--"
+  },
+  {
+   "title": "ADP Nonfarm Employment Change",
+   "timestamp": 1925039700.0,
+   "country": "United States",
+   "star": "MEDIUM",
+   "previous": "120K",
+   "consensus": "130K",
+   "actual": "--"
+  },
+  {
+   "title": "CPI MoM",
+   "timestamp": 1926163800.0,
+   "country": "United States",
+   "star": "HIGH",
+   "previous": "0.2%",
+   "consensus": "0.2%",
+   "actual": "--"
+  },
+  {
+   "title": "Nonfarm Payrolls",
+   "timestamp": 1925213400.0,
+   "country": "United Kingdom",
+   "star": "HIGH",
+   "previous": "--",
+   "consensus": "--",
+   "actual": "--"
+  },
+  {
+   "title": "Nonfarm Payrolls",
+   "timestamp": 1938515400.0,
+   "country": "United States",
+   "star": "HIGH",
+   "previous": "150K",
+   "consensus": "155K",
+   "actual": "--"
+  },
+  {
+   "title": "Initial Jobless Claims",
+   "timestamp": 1938429000.0,
+   "country": "United States",
+   "star": "MEDIUM",
+   "previous": "220K",
+   "consensus": "220K",
+   "actual": "--"
+  },
+  {
+   "title": "FOMC Rate Decision",
+   "timestamp": 1927479600.0,
+   "country": "United States",
+   "star": "HIGH",
+   "previous": "--",
+   "consensus": "--",
+   "actual": "--"
+  },
+  {
+   "title": "Filler release 0",
+   "timestamp": 1930917600.0,
+   "country": "United States",
+   "star": "LOW",
+   "previous": "--",
+   "consensus": "--",
+   "actual": "--"
+  },
+  {
+   "title": "Filler release 1",
+   "timestamp": 1931004000.0,
+   "country": "United States",
+   "star": "LOW",
+   "previous": "--",
+   "consensus": "--",
+   "actual": "--"
+  },
+  {
+   "title": "Filler release 2",
+   "timestamp": 1931090400.0,
+   "country": "United States",
+   "star": "LOW",
+   "previous": "--",
+   "consensus": "--",
+   "actual": "--"
+  }
+ ]
+}

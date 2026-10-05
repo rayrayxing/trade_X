@@ -1,0 +1,29 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//tradex test//BLS release schedule layout sample//EN
+X-TRADEX-NOTE:FORMAT SAMPLE hand-built to the RFC 5545 layout the BLS schedule uses; dates are test values (2031), not the BLS schedule.
+BEGIN:VEVENT
+UID:consumer-price-index-2031-01@sample
+DTSTART;TZID=US-Eastern:20310114T083000
+DTEND;TZID=US-Eastern:20310114T090000
+SUMMARY:Consumer Price Index for December 2030
+END:VEVENT
+BEGIN:VEVENT
+UID:empsit-2031-01@sample
+DTSTART;TZID=US-Eastern:20310103T083000
+DTEND;TZID=US-Eastern:20310103T090000
+SUMMARY:Employment Situation for December 2030
+END:VEVENT
+BEGIN:VEVENT
+UID:empsit-2031-06@sample
+DTSTART;TZID=US-Eastern:20310606T083000
+DTEND;TZID=US-Eastern:20310606T090000
+SUMMARY:Employment Situation for May
+ 2031
+END:VEVENT
+BEGIN:VEVENT
+UID:empsit-2031-09@sample
+DTSTART:20310905T123000Z
+SUMMARY:Employment Situation for August 2031
+END:VEVENT
+END:VCALENDAR

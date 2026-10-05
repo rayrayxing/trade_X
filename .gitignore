@@ -9,6 +9,7 @@ dist/
 data/cache/
 reports/
 data/research/
+.hypothesis/
 data/state/
 data/ledger/
 logs/

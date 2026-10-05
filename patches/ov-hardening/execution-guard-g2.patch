@@ -1,0 +1,259 @@
+--- a/tradex/execution/guard.py
++++ b/tradex/execution/guard.py
+@@ -6,7 +6,14 @@
+ - it is for an agent account: ``account="agent"`` and the venue account ID is listed as
+   agent-owned in config/accounts.yaml (an unresolved ID owns nothing);
+ - an entry or hedge cites a risk-gate verdict ID that exists, was accepted, belongs to the
+-  same decision, and its quantity is no larger than the verdict's size;
++  same decision, and carries a stop loss; all orders citing one verdict together stay inside
++  the verdict's size (a verdict is a budget, not a ticket: ``check`` reserves the quantity and
++  ``release`` gives it back when the order is cancelled or never submitted);
++- when the verdict lookup also returns the plan it sized (``plan`` key: symbol, direction, stop),
++  the order's symbol and side must match it and its stop may not be looser than the plan's;
++- the verdict row itself is intact: ``ledger_verdicts`` recomputes the row's hash and its link
++  to the row before it, so a row planted in the ledger by anything but the core's own
++  ``Ledger.append`` is not a verdict;
+ - an exit only reduces an open agent position of the same decision (exits close risk, so
+   they need no verdict: a flatten must never be blocked by a missing one).
+ 
+@@ -14,12 +21,15 @@
+ """
+ from __future__ import annotations
+ 
++import json
++import threading
+ from abc import ABC, abstractmethod
+ from typing import Any, Callable, Iterable
+ 
+ import pandas as pd
+ 
+ from tradex.core.interfaces import AccountInfo, Broker, BrokerFill, BrokerPosition, OrderRequest, OrderStatus
++from tradex.core.ledger import GENESIS, row_hash
+ 
+ QTY_TOL = 1e-9
+ 
+@@ -31,11 +41,25 @@
+ 
+ 
+ def ledger_verdicts(ledger) -> VerdictLookup:
+-    """Look verdicts up in the ledger, where the core writes them before it places the order."""
++    """Look verdicts up in the ledger, where the core writes them before it places the order.
++
++    A row counts only if its stored hash is the hash of its own fields chained to the row before
++    it. The lookup also returns the decision's plan (``plan`` key) so the guard can compare the
++    order with it."""
+     def find(decision_id: str, verdict_id: str):
+-        for r in ledger.rows(kind="verdict", decision_id=decision_id):
+-            if r.get("verdict_id") == verdict_id:
+-                return r
++        for r in ledger.db.execute("SELECT * FROM events WHERE kind='verdict' AND decision_id=? ORDER BY seq",
++                                   (decision_id,)):
++            d = json.loads(r["payload"])
++            if d.get("verdict_id") != verdict_id:
++                continue
++            prev = ledger.db.execute("SELECT hash FROM events WHERE seq=?", (r["seq"] - 1,)).fetchone()
++            prev_hash = prev["hash"] if prev else GENESIS
++            want = row_hash(prev_hash, r["kind"], r["time"], r["decision_id"], r["payload"], r["git_commit"],
++                            r["config_hash"])
++            if r["prev_hash"] != prev_hash or r["hash"] != want:
++                return None                                  # not written by Ledger.append: not a verdict
++            plans = ledger.rows(kind="plan", decision_id=decision_id)
++            return dict(d, plan=plans[0] if plans else None)
+         return None
+     return find
+ 
+@@ -48,6 +72,14 @@
+     def __init__(self, verdicts: VerdictLookup, agent_accounts: Iterable[str]):
+         self.verdicts = verdicts
+         self.agent_accounts = {a for a in agent_accounts if a}
++        self._reserved: dict[str, dict[str, float]] = {}      # verdict id -> {client order id: qty}
++        self._lock = threading.Lock()
++
++    def release(self, client_order_id: str) -> None:
++        """Give back what an order reserved (it was cancelled, refused by the venue or never sent)."""
++        with self._lock:
++            for held in self._reserved.values():
++                held.pop(client_order_id, None)
+ 
+     def check(self, req: OrderRequest, account_id: str, positions: list[BrokerPosition]) -> None:
+         if req.account != "agent":
+@@ -72,8 +104,26 @@
+             raise OrderRefused(f"{req.client_order_id}: verdict {req.verdict_id} is for another decision")
+         if _get(v, "outcome") != "accepted":
+             raise OrderRefused(f"{req.client_order_id}: verdict {req.verdict_id} was not accepted")
+-        if req.qty > float(_get(v, "qty") or 0.0) + QTY_TOL:
+-            raise OrderRefused(f"{req.client_order_id}: qty {req.qty} exceeds verdict size {_get(v, 'qty')}")
++        if req.stop_loss is None:
++            raise OrderRefused(f"{req.client_order_id}: an entry must carry a stop loss")
++        plan = _get(v, "plan")
++        if plan:
++            if req.symbol != plan.get("symbol"):
++                raise OrderRefused(f"{req.client_order_id}: {req.symbol} is not the plan's symbol {plan.get('symbol')}")
++            if req.side != plan.get("direction"):
++                raise OrderRefused(f"{req.client_order_id}: side {req.side} is against the plan's direction")
++            looser = (req.stop_loss < plan["stop"]) if plan["direction"] > 0 else (req.stop_loss > plan["stop"])
++            if looser:
++                raise OrderRefused(f"{req.client_order_id}: stop {req.stop_loss} is looser than the plan's {plan['stop']}")
++        size = float(_get(v, "qty") or 0.0)
++        with self._lock:
++            held = self._reserved.setdefault(req.verdict_id, {})
++            others = sum(q for c, q in held.items() if c != req.client_order_id)
++            if req.qty + others > size + QTY_TOL:
++                what = (f"qty {req.qty} exceeds verdict size {size}" if not others else
++                        f"qty {req.qty} with {others:g} already placed exceeds verdict size {size}")
++                raise OrderRefused(f"{req.client_order_id}: {what}")
++            held[req.client_order_id] = req.qty
+ 
+ 
+ class VenueAdapter(ABC):
+@@ -88,9 +138,26 @@
+         self.account_id = account_id
+         self.guard = guard
+ 
++    def __init_subclass__(cls, **kw):
++        super().__init_subclass__(**kw)
++        inner = cls.__dict__.get("cancel")
++        if inner is not None and not getattr(inner, "_releases", False):
++            def cancel(self, client_order_id: str, _inner=inner) -> bool:
++                done = _inner(self, client_order_id)
++                if done:
++                    self.guard.release(client_order_id)      # a cancelled entry gives its quantity back
++                return done
++            cancel._releases = True                           # type: ignore[attr-defined]
++            cancel.__doc__ = inner.__doc__
++            cls.cancel = cancel                               # type: ignore[method-assign]
++
+     def place(self, req: OrderRequest) -> str:
+         self.guard.check(req, self.account_id, self.positions(account=None))
+-        return self._submit(req)
++        try:
++            return self._submit(req)
++        except BaseException:
++            self.guard.release(req.client_order_id)
++            raise
+ 
+     @abstractmethod
+     def _submit(self, req: OrderRequest) -> str: ...
+@@ -123,7 +190,17 @@
+ 
+     def place(self, req: OrderRequest) -> str:
+         self.guard.check(req, self.account_id, self.inner.positions(account=None))
+-        return self.inner.place(req)
++        try:
++            return self.inner.place(req)
++        except BaseException:
++            self.guard.release(req.client_order_id)
++            raise
++
++    def cancel(self, client_order_id: str) -> bool:
++        done = self.inner.cancel(client_order_id)
++        if done:
++            self.guard.release(client_order_id)
++        return done
+ 
+     def __getattr__(self, name: str):
+         return getattr(self.inner, name)
+--- a/tests/test_execution.py
++++ b/tests/test_execution.py
+@@ -149,8 +149,9 @@
+     entries = [o for o in led.rows(kind="order") if o["purpose"] == "entry"]
+     assert entries
+     for o in entries:
++        plan = led.rows(kind="plan", decision_id=o["decision_id"])[0]
+         req = OrderRequest(o["client_order_id"], o["decision_id"], o["symbol"], "stocks", o["side"], o["qty"],
+-                           verdict_id=f"{o['decision_id']}-v")
++                           stop_loss=plan["stop"], verdict_id=f"{o['decision_id']}-v")
+         guard.check(req, "sim", [])
+ 
+ 
+@@ -176,3 +177,46 @@
+ def test_accounts_file_is_protected():
+     from pathlib import Path
+     assert "config/accounts.yaml" in Path("config/protected_paths.txt").read_text().split()
++
++
++# --- a verdict is a budget (G2) -------------------------------------------------------------------
++
++def test_a_cancelled_entry_gives_its_quantity_back_to_the_verdict():
++    from dataclasses import replace
++    v = _FakeVenue(_guard())                                              # the verdict allows 10
++    v.place(_entry(qty=6))
++    second = replace(_entry(qty=6), client_order_id="d1-entry-r1")
++    with pytest.raises(OrderRefused, match="already placed"):
++        v.place(second)
++    assert v.cancel("d1-entry")                                           # the core's resize: cancel, then re-place
++    assert v.place(second) == "d1-entry-r1"
++
++
++def test_the_same_client_order_id_is_not_counted_twice():
++    v = _FakeVenue(_guard())
++    assert v.place(_entry(qty=10)) == v.place(_entry(qty=10)) == "d1-entry"
++
++
++def test_a_venue_error_does_not_burn_the_verdict():
++    class Down(_FakeVenue):
++        fail = True
++
++        def _submit(self, req):
++            if self.fail:
++                raise ConnectionError("venue down")
++            return super()._submit(req)
++    v = Down(_guard())
++    with pytest.raises(ConnectionError):
++        v.place(_entry(qty=10))
++    v.fail = False
++    assert v.place(_entry(qty=10)) == "d1-entry"
++
++
++def test_guard_broker_cancel_releases_too():
++    from dataclasses import replace
++    g = GuardedBroker(SimBroker(10_000, ZERO_COST, bar=DAY, account_id="acct-1"), _guard())
++    g.place(_entry(qty=10))
++    with pytest.raises(OrderRefused):
++        g.place(replace(_entry(qty=1), client_order_id="d1-entry-2"))
++    assert g.cancel("d1-entry")
++    g.place(replace(_entry(qty=1), client_order_id="d1-entry-2"))
+--- a/tests/test_gaps_safety.py
++++ b/tests/test_gaps_safety.py
+@@ -121,7 +121,6 @@
+     raw.close()
+ 
+ 
+-@known_gap("G1", "the order guard reads verdict rows without checking their hash link, so a forged accepted verdict passes")
+ def test_g1_order_guard_refuses_a_verdict_row_the_chain_does_not_vouch_for(lm):
+     led, _, path = lm
+     _forge_verdict_row(path)
+@@ -209,7 +208,6 @@
+     _guard().check(OrderRequest("x6", DID, "EUR_USD", "forex", -1, 1000.0, purpose="exit"), "acct", [_pos(1000)])
+ 
+ 
+-@known_gap("G2", "a risk verdict can be reused: every order citing it is checked against the full size again")
+ def test_g2_one_verdict_cannot_size_several_orders():
+     g = _guard(plan(), verdict(qty=1000))
+     placed = [_entry(coid=f"e{i}", qty=1000.0) for i in range(3)]
+@@ -220,25 +218,21 @@
+     assert sum(r.qty for r in ok) <= 1000.0
+ 
+ 
+-@known_gap("G2", "the guard never compares the order's symbol with the plan the verdict belongs to")
+ def test_g2_entry_must_match_the_symbol_of_its_plan():
+     g = _guard(plan(symbol="EUR_USD"), verdict(qty=1000))
+     assert raised(OrderRefused, g.check, _entry(symbol="USD_JPY", stop=149.0), "acct", [])
+ 
+ 
+-@known_gap("G2", "the guard never compares the order's side with the plan's direction")
+ def test_g2_entry_must_match_the_direction_of_its_plan():
+     g = _guard(plan(direction=1), verdict(qty=1000))
+     assert raised(OrderRefused, g.check, _entry(side=-1, stop=1.11), "acct", [])
+ 
+ 
+-@known_gap("G2", "an entry with no stop loss passes the guard")
+ def test_g2_entry_without_a_stop_is_refused():
+     g = _guard(plan(), verdict(qty=1000))
+     assert raised(OrderRefused, g.check, _entry(stop=None), "acct", [])
+ 
+ 
+-@known_gap("G2", "the entry's stop is not compared with the plan's stop (a far stop passes)")
+ def test_g2_entry_stop_must_be_the_plans_stop_or_tighter():
+     g = _guard(plan(entry=1.10, stop=1.09), verdict(qty=1000))
+     assert raised(OrderRefused, g.check, _entry(stop=0.50), "acct", [])
