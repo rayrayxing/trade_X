@@ -35,10 +35,10 @@ from tradex.backtest.validation import Thresholds, WalkForwardConfig, walk_forwa
 from tradex.costs.models import model_for
 from tradex.data import earnings as earn
 from tradex.data.opend import DEFAULT_CACHE as OPEND_CACHE, load_cached
-from tradex.research import builders, catalog, panels, screen as scr
+from tradex.research import builders, catalog, panels, robust, screen as scr
 from tradex.research.sources import DataUnavailable
 from tradex.research.trials import TrialLedger
-from tradex.research.universe import ETFS, PAIRS, STOCKS
+from tradex.research.universe import ETFS, ETFS_WIDE, PAIRS, ROUND3_ETFS, STOCKS
 from tradex.strategy.spec import StrategySpec
 from tradex.timeframes import duration
 
@@ -68,7 +68,7 @@ SECTOR |= {s: "XLV" for s in ("ABBV", "ABT", "AMGN", "BMY", "CVS", "DHR", "GILD"
 SECTOR |= {s: "XLI" for s in ("BA", "CAT", "DE", "EMR", "FDX", "GD", "GE", "HON", "LMT", "MMM", "RTX", "UNP", "UPS", "UBER")}
 
 # Screen size per pool: one fixed choice, made before any screened run (not tuned).
-SCREEN_N = {"stocks": 30, "etfs": 10, "all": 30}
+SCREEN_N = {"stocks": 30, "etfs": 10, "all": 30, "etfs_wide": 10}
 
 # Ladder order of the stage-3 gate; the first failing rung is reported.
 RUNGS = ("trades", "profit_factor", "deflated_sharpe", "max_drawdown", "folds_profitable")
@@ -81,7 +81,8 @@ class Plan:
     builder: str | None = None       # name of a data builder below
     verdict: str | None = None       # set when not run: "needs data" | "not built" | "not a standalone signal"
     why: str = ""
-    pool: str | None = None          # liquidity-screened candidate pool: "stocks" | "etfs" | "all"
+    pool: str | None = None          # liquidity-screened candidate pool: "stocks" | "etfs" | "all" | "etfs_wide"
+    screen_n: int | None = None      # screen size when not the pool's default (the whole pool: point-in-time only)
 
 
 def _seed(name):
@@ -127,6 +128,13 @@ PLANS = [
     Plan("realised-covariance-regime-detection", _proposed("etf-corr-calm-trend"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound"), "regime_vix"),
+    # round 3: the same two rules on every ETF of the pool (and of the wider pool) listed at the time
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound-pool22"), "regime_etf", pool="etfs", screen_n=len(ETFS)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound-pool22"), "regime_vix", pool="etfs", screen_n=len(ETFS)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound-pool34"), "regime_etf", pool="etfs_wide",
+         screen_n=len(ETFS_WIDE)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound-pool34"), "regime_vix", pool="etfs_wide",
+         screen_n=len(ETFS_WIDE)),
     Plan("momentum-with-crash-protection-vol-scaled", _proposed("stk-rs-momentum-crash-protected"), "rs_crash", pool="stocks"),
     Plan("joint-time-series-and-cross-sectional-strategy", _proposed("fx-currency-strength-momentum"), "fx_strength"),
     Plan("g10-carry-long-high-rate-short-low-rate", _proposed("fx-carry-trend"), "fx_carry"),
@@ -164,7 +172,7 @@ def _us(symbols, tf, cache=OPEND_CACHE) -> dict[str, pd.DataFrame]:
 
 
 def pool_symbols(pool: str) -> list[str]:
-    return {"stocks": STOCKS, "etfs": ETFS, "all": list(dict.fromkeys(ETFS + STOCKS))}[pool]
+    return {"stocks": STOCKS, "etfs": ETFS, "all": list(dict.fromkeys(ETFS + STOCKS)), "etfs_wide": ETFS_WIDE}[pool]
 
 
 def _xs_mask(values: pd.DataFrame, members: pd.DataFrame | None) -> pd.DataFrame:
@@ -344,7 +352,7 @@ def prepare(plan: Plan, spec: StrategySpec, wf: WalkForwardConfig, cfg: EngineCo
     costs = model_for(spec.asset_class, stress=stress) if stress != 1.0 else model_for(spec.asset_class)
     tradable = members = None
     if plan.pool:
-        got = _screened(plan, spec, wf, cache, screen_n or SCREEN_N[plan.pool])
+        got = _screened(plan, spec, wf, cache, screen_n or plan.screen_n or SCREEN_N[plan.pool])
         if got is None:
             return Prepared({}, [], costs, cfg)
         data, tradable, members, screen, pool_n = got
@@ -419,6 +427,8 @@ def run_plan(plan: Plan, entry: catalog.CatalogEntry, ledger: TrialLedger, wf: W
     oos = rep.oos
     if not failing:
         row["robustness"] = robustness(plan, spec, ledger, wf, th, cfg, cache)
+    elif failing == ["deflated_sharpe"]:
+        row["near_miss"] = near_miss(plan, spec, rep, wf, cfg, cache)
     traded = sorted(rep.oos_trades["symbol"].unique()) if rep.oos_trades is not None and len(rep.oos_trades) else []
     return row | {
         "result": "pass" if not failing else "fail", "failing_rung": failing[0] if failing else None,
@@ -437,7 +447,8 @@ def run_plan(plan: Plan, entry: catalog.CatalogEntry, ledger: TrialLedger, wf: W
         if rep.oos_trades is not None and len(rep.oos_trades) else {},
         "folds_profitable": f"{sum(f.test_return > 0 for f in rep.folds)}/{len(rep.folds)}",
         "folds": [{"test": f"{f.test_start[:10]}..{f.test_end[:10]}", "params": f.best_params,
-                   "test_return": _f(f.test_return), "trades": f.test_trades} for f in rep.folds],
+                   "test_return": _f(f.test_return), "test_sharpe": _f(f.test_sharpe), "trades": f.test_trades}
+                  for f in rep.folds],
         "checks": checks, "warnings": rep.warnings[:10], "seconds": round(time.time() - t0, 1),
     }
 
@@ -454,9 +465,54 @@ def robustness(plan: Plan, spec: StrategySpec, ledger, wf, th, cfg, cache=OPEND_
     """Extra checks for a pass, not part of the stage-3 gate: double spread and slippage, and
     (screened plans) a universe twice as wide. Each is recorded as its own trial variant."""
     out = {"costs_x2": _brief(_walk(spec, prepare(plan, spec, wf, cfg, cache, stress=2.0), ledger, wf, th, "|costs_x2"))}
-    if plan.pool:
+    if plan.pool and not plan.screen_n:      # a whole-pool screen has nothing wider to try
         prep = prepare(plan, spec, wf, cfg, cache, screen_n=2 * SCREEN_N[plan.pool])
         out["screen_x2"] = _brief(_walk(spec, prep, ledger, wf, th)) | {"universe_rule": prep.universe_rule}
+    return out
+
+
+SUBPERIOD = "2016-01-01"
+
+
+def near_miss(plan: Plan, spec: StrategySpec, rep, wf, cfg, cache=OPEND_CACHE) -> dict:
+    """Report-only robustness for a strategy that fails only the deflated-Sharpe rung (tradex.research.robust):
+    the out-of-sample result since 2016, each fold's test window rerun with doubled spread and slippage
+    (same chosen parameters, so no new trial), and a bootstrap interval of the out-of-sample Sharpe."""
+    stressed = prepare(plan, spec, wf, cfg, cache, stress=2.0)
+    return {"since": robust.subperiod(rep.oos_returns, rep.oos_trades, SUBPERIOD),
+            "costs_x2_fixed_params": robust.rerun_folds(spec, stressed.data, rep.folds, stressed.costs, stressed.cfg,
+                                                        stressed.tradable, stressed.filter_ctx),
+            "bootstrap_sharpe": robust.stationary_bootstrap_sharpe(rep.oos_returns),
+            "param_stability": _f(rep.param_stability), "expected_max_sharpe": _f(rep.oos.get("expected_max_sharpe_annual"))}
+
+
+def _near_miss_md(rows: list[dict]) -> list[str]:
+    nm = [r for r in rows if r.get("near_miss")]
+    if not nm:
+        return []
+    out = ["", "## Near misses: how solid are they (report only, not part of the gate)", "",
+           "Strategies that clear every rung except the deflated Sharpe. Nothing was changed to make them pass. "
+           f"Since {SUBPERIOD[:4]}: the same out-of-sample returns and trades from {SUBPERIOD} on. Costs x2: each fold's "
+           "test window rerun with the parameters that fold chose, spread and slippage doubled (no new selection, so "
+           "not a new trial). Bootstrap: stationary bootstrap of the daily out-of-sample returns, 5,000 resamples, "
+           "mean block 10 days; the Sharpe interval is 5th to 95th percentile. Expected max Sharpe is what the best "
+           "of N skill-less trials would show; the DSR asks how likely the observed Sharpe beats it.", "",
+           "| Strategy | OOS (all) | Since 2016 | Costs x2 | Bootstrap Sharpe 5-50-95% | P(Sharpe <= 0) | Expected max Sharpe (N) | Param stability |",
+           "|---|---|---|---|---|---|---|---|"]
+    for r in nm:
+        n = r["near_miss"]
+        si, cx, bs = n["since"], n["costs_x2_fixed_params"], n["bootstrap_sharpe"]
+        pc = bs["percentiles"]
+        out.append(f"| `{r['strategy_id']}` | {r['oos_trades']} trades, PF {r['profit_factor']}, Sharpe {r['sharpe']}, "
+                   f"DD {r['max_drawdown']} | {si['trades']} trades, PF {si['profit_factor']}, Sharpe {si['sharpe']}, "
+                   f"DD {si['max_drawdown']} | {cx['trades']} trades, PF {cx['profit_factor']}, Sharpe {cx['sharpe']}, "
+                   f"folds {cx['folds_profitable']} | {pc.get('p5')} / {pc.get('p50')} / {pc.get('p95')} | "
+                   f"{bs['p_sharpe_le_0']} | {n['expected_max_sharpe']} ({r['n_trials']}) | {n['param_stability']} |")
+    out += ["", "Per fold (test window: return, annualised Sharpe, trades, chosen parameters):", ""]
+    for r in nm:
+        out.append(f"- `{r['strategy_id']}`: " + "; ".join(
+            f"{f['test']}: {f['test_return']:+.1%}, Sharpe {f.get('test_sharpe')}, {f['trades']} trades, {f['params']}"
+            for f in r["folds"]))
     return out
 
 
@@ -521,6 +577,7 @@ def render_md(rows: list[dict], meta: dict) -> str:
                              f"Sharpe {v['sharpe']}, DSR {v['deflated_sharpe']}, max DD {v['max_drawdown']}, "
                              f"folds {v['folds_profitable']}: **{v['gate']}**" +
                              (f" ({'; '.join(v['reasons'])})" if v["reasons"] else ""))
+    lines += _near_miss_md(ran)
     lines += ["", "## Not run", "", "| Catalog entry | Status in catalog | Result | Why |", "|---|---|---|---|"]
     for r in rows:
         if r["result"] not in ("pass", "fail"):

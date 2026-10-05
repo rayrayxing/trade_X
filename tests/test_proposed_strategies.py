@@ -22,7 +22,7 @@ PLANNED = [p for p in gate.PLANS if p.spec is not None and p.spec.parent == gate
 
 
 def test_proposed_specs_validate_and_are_never_marked_validated():
-    assert len(SPECS) == 13        # the 11 first proposals, etf-vix-panic-rebound (Cboe VIX), etf-pre-fomc-drift-d1
+    assert len(SPECS) == 17        # 11 first proposals, etf-vix-panic-rebound, etf-pre-fomc-drift-d1, 4 panic-rebound pool variants
     for s in SPECS.values():
         assert s.validate() == [], s.id
         assert s.status == "proposed" and s.provenance["author"] == "claude"
@@ -292,3 +292,20 @@ def test_single_strategy_runs_select_by_strategy_id_and_write_their_own_result(t
     assert "fx-carry-trend: needs data" in capsys.readouterr().out
     assert (tmp_path / "results" / "single" / "fx-carry-trend.json").exists()
     assert not (tmp_path / "results" / "phase1_gate.json").exists()
+
+
+def test_panic_rebound_variants_share_one_trial_group_and_screen_their_whole_pool():
+    from tradex.backtest.validation import trial_group
+    from tradex.research.universe import ETFS, ETFS_WIDE
+    ids = {s for s in SPECS if "panic-rebound" in s}
+    assert len(ids) == 6
+    for sid in ids:
+        assert set(trial_group(SPECS[sid])) == ids
+    plans = {p.spec.stem: p for p in PLANNED if p.spec.stem in ids and p.pool}
+    assert {k: (p.pool, p.screen_n) for k, p in plans.items()} == {
+        "etf-panic-rebound-pool22": ("etfs", len(ETFS)), "etf-vix-panic-rebound-pool22": ("etfs", len(ETFS)),
+        "etf-panic-rebound-pool34": ("etfs_wide", len(ETFS_WIDE)), "etf-vix-panic-rebound-pool34": ("etfs_wide", len(ETFS_WIDE))}
+    for k, p in plans.items():
+        assert SPECS[k].universe == gate.pool_symbols(p.pool)
+        base = SPECS[k.rsplit("-pool", 1)[0]]
+        assert (SPECS[k].entry, SPECS[k].exit, SPECS[k].search_space) == (base.entry, base.exit, base.search_space)

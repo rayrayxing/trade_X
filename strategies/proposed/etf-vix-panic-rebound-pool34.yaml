@@ -1,0 +1,30 @@
+id: etf-vix-panic-rebound-pool34
+version: 1
+asset_class: stocks
+family: mean_reversion
+hypothesis: 'Pre-registered 2026-10-05, before any run of this variant. Same rules, parameters and search space as etf-vix-panic-rebound (Cboe
+  VIX close above 30, SPY more than 10% below its one-year high, the symbol''s first up day; exit on fear fading or the drawdown closing). Hypothesis:
+  after a market-wide panic, liquid ETFs rebound over the following weeks, so the rule''s edge is not specific to the 13 index and sector ETFs
+  it was first run on. Universe: the 22-ETF pool plus 12 liquid US-listed equity ETFs added in round 3 (SMH, XBI, KRE, ITB, XHB, XOP, XRT, IBB,
+  EWJ, EWZ, FXI, VWO; several have OpenD daily history only from 2012), screened point-in-time: every ETF with 60 sessions of history before each
+  screen date. The panic test is market-wide, so more symbols mean more trades per event, not more events; out-of-sample trades are expected to
+  exceed 100. Expected: profit factor above 1.2 out of sample and positive in most folds. Trials count together with every panic-rebound variant.'
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, TLT, GLD, EFA, EEM, IEF, HYG, LQD, SLV, VNQ, SMH, XBI, KRE, ITB, XHB,
+  XOP, XRT, IBB, EWJ, EWZ, FXI, VWO]
+timeframes: {signal: D1}
+features:
+  vix: {fn: data.column, name: vix}
+  dd: {fn: data.column, name: rg_dd}
+entry: {long: 'vix > 30 and dd < -0.1 and close > shift(close, 1)'}
+exit: {stop_atr: 4.0, target_r: 3.0, max_bars: 60, long_when: vix < 20 or dd > -0.03}
+holding: {expected_hours: 1440}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space:
+  stop_atr: [3.0, 5.0]
+  target_r: [2.0, 4.0]
+provenance:
+  source: 'research round 3: etf-vix-panic-rebound on a wider ETF universe'
+  author: claude
+  created: '2026-10-05'
+  shares_trials_with: [etf-panic-rebound, etf-panic-rebound-pool22, etf-panic-rebound-pool34, etf-vix-panic-rebound, etf-vix-panic-rebound-pool22]
+status: proposed
