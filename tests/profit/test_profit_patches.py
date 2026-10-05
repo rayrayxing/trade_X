@@ -1,7 +1,7 @@
 """patches/ov-exits/*.patch: scope, applicability, and a run of the patched tree.
 
-core-wiring.patch and dashboard-gate-verdicts.patch touch only unprotected files but change the core's behaviour
-when switched on, so they are patches for the owners of those files to review. es-tail-count.patch touches a
+dashboard-gate-verdicts.patch touches only unprotected files and is a patch for the dashboard's owner to review
+(core-wiring.patch was applied to the core as a commit on 5 Oct). es-tail-count.patch touches a
 protected file (tradex/risk/exposure.py), so Ray applies it. These tests apply each to a scratch copy and run the
 patch's own tests and the existing suites around the files it changes.
 
@@ -23,11 +23,6 @@ PROTECTED = [ln.strip() for ln in (ROOT / "config" / "protected_paths.txt").read
              if ln.strip() and not ln.startswith("#")]
 
 PATCHES = {
-    "core-wiring.patch": {
-        "files": {"tradex/core/loop.py", "tradex/core/replay.py", "tradex/runtime/build.py", "tests/test_profit_wiring.py"},
-        "protected": set(),
-        "run": ["tests/test_profit_wiring.py", "tests/test_spine.py", "tests/test_core_actions.py",
-                "tests/test_runtime_build.py", "tests/test_replay_smoke.py"]},
     "dashboard-gate-verdicts.patch": {
         "files": {"tradex/dashboard/views.py", "tradex/dashboard/static/app.js"},
         "protected": set(),
