@@ -1,17 +1,21 @@
 """What the loop may and may not do: agents propose through files, only passing evidence reaches paper, protected paths stay untouched."""
 import ast
 import hashlib
+import importlib.util
 from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as hst
 
-from tools.check_protected_paths import protected_prefixes, violations
 from tradex.research.loop.state import EVIDENCE_FOR_PAPER, IllegalTransition, LoopState, NotEligible
 
 from loopkit import draft_file, idea_file, make_rig, spec_dict
 
 ROOT = Path(__file__).resolve().parents[2]
+_spec = importlib.util.spec_from_file_location("check_protected_paths", ROOT / "tools" / "check_protected_paths.py")
+_cpp = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_cpp)
+protected_prefixes, violations = _cpp.protected_prefixes, _cpp.violations
 PKG = ROOT / "tradex" / "research" / "loop"
 FORBIDDEN = ("tradex.execution", "tradex.risk", "tradex.agents", "tradex.core.loop", "tradex.runtime", "tradex.data.synthetic",
              "tradex.notify", "moomoo", "oandapyV20", "requests")
