@@ -22,7 +22,7 @@ PLANNED = [p for p in gate.PLANS if p.spec is not None and p.spec.parent == gate
 
 
 def test_proposed_specs_validate_and_are_never_marked_validated():
-    assert len(SPECS) == 11
+    assert len(SPECS) == 12        # the 11 first proposals plus etf-vix-panic-rebound (Cboe VIX)
     for s in SPECS.values():
         assert s.validate() == [], s.id
         assert s.status == "proposed" and s.provenance["author"] == "claude"
@@ -243,7 +243,7 @@ def test_fx_builders_need_oanda_history_and_rates(tmp_path, monkeypatch, oanda_c
 # --- the gate reports missing inputs instead of running on anything else ----------------------
 
 def test_gate_reports_needs_data_for_every_input_it_lacks(tmp_path, monkeypatch):
-    for name in ("EARNINGS_DIR", "FOMC_FILE", "RATES_FILE", "OANDA_CACHE"):
+    for name in ("EARNINGS_DIR", "FOMC_FILE", "RATES_FILE", "OANDA_CACHE", "VIX_FILE"):
         monkeypatch.setattr(builders, name, tmp_path / "absent" / name)
     save_daily(tmp_path / "opend", ["SPY"], n=50)
     entries = {e.id: e for e in catalog.load()}
@@ -260,7 +260,7 @@ def test_single_strategy_runs_select_by_strategy_id_and_write_their_own_result(t
     monkeypatch.setattr(gate, "RESULTS", tmp_path / "results")
     monkeypatch.setenv("TRADEX_TRIALS_DB", str(tmp_path / "trials.db"))
     monkeypatch.setattr(gate, "OANDA_CACHE", tmp_path / "none")
-    for name in ("EARNINGS_DIR", "FOMC_FILE", "RATES_FILE", "OANDA_CACHE"):
+    for name in ("EARNINGS_DIR", "FOMC_FILE", "RATES_FILE", "OANDA_CACHE", "VIX_FILE"):
         monkeypatch.setattr(builders, name, tmp_path / "absent" / name)
     assert gate.main(["fx-carry-trend"]) == 0
     assert "fx-carry-trend: needs data" in capsys.readouterr().out

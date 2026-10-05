@@ -1,0 +1,22 @@
+id: etf-vix-panic-rebound
+version: 1
+asset_class: stocks
+family: mean_reversion
+hypothesis: When the Cboe VIX closes above 30 and the market is more than 10% below its one-year high, the first up day marks a rebound that lasts weeks; leave once fear has faded (VIX below 20) or the drawdown has mostly closed. The literal VIX form of etf-panic-rebound, which used realised volatility for lack of VIX history.
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB]
+timeframes: {signal: D1}
+features:
+  vix: {fn: data.column, name: vix}
+  dd:  {fn: data.column, name: rg_dd}
+entry:
+  long: "vix > 30 and dd < -0.1 and close > shift(close, 1)"
+exit:
+  stop_atr: 4.0
+  target_r: 3.0
+  max_bars: 60
+  long_when: "vix < 20 or dd > -0.03"
+holding: {expected_hours: 1440}
+sizing: {model: kelly_fraction, cap_risk_pct: 2}
+search_space: {stop_atr: [3.0, 5.0], target_r: [2.0, 4.0]}
+provenance: {source: "catalog: buy equity after a VIX spike above 30 (Cboe VIX daily history)", author: claude, created: 2026-10-05}
+status: proposed

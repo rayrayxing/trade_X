@@ -9,6 +9,9 @@ Rules that keep results honest:
 - Open positions are reviewed every bar by the same PositionReviewer the live loop
   uses, so time limits, stale-trade exits and rollover exits are in the backtest.
 - An optional day-trade cap (US pattern-day-trader style) can be switched on per account.
+- ``exit.session_close`` (stocks): a position still open on the last bar of a US regular
+  session is closed at that bar's close (16:00 New York, or the early close on half days),
+  and no entry is taken from that bar, so the strategy never holds overnight.
 """
 from __future__ import annotations
 
@@ -130,7 +133,7 @@ def run_backtest(
     for sym, bars in data.items():
         if bars.empty:
             continue
-        sig = precomputed[sym] if precomputed and sym in precomputed else compute_signals(spec, bars, filter_ctx)
+        sig = precomputed[sym] if precomputed and sym in precomputed else compute_signals(spec, bars, filter_ctx, sym)
         warnings += [f"{sym}: {w}" for w in sig.warnings]
         trad = np.ones(len(bars), dtype=bool)
         if tradable is not None:
@@ -144,6 +147,8 @@ def run_backtest(
             lx=sig.long_exit.to_numpy(bool), sx=sig.short_exit.to_numpy(bool),
             atr=sig.atr.to_numpy(float), trad=trad,
             events=sorted(pd.DatetimeIndex(cfg.events.get(sym, []))) if cfg.events else [],
+            sess_end=session_end_mask(bars.index, bar_td) if spec.exit.session_close and spec.asset_class == "stocks"
+            else np.zeros(len(bars), dtype=bool),
         )
 
     timeline: dict[pd.Timestamp, list[tuple[str, int]]] = defaultdict(list)
@@ -304,6 +309,11 @@ def run_backtest(
                         reason = reason.replace("stop", "breakeven")
                     close(sym, ts, px, reason, force=reason.startswith(("stop", "breakeven")))
 
+            # d0. intraday strategies are flat at the session close
+            if sym in open_pos and s["sess_end"][i]:
+                close(sym, bar_end, c, "session_close", force=True)
+                pending_exit.pop(sym, None)
+
             # d. carrying costs and review at the close
             if sym in open_pos:
                 ps = open_pos[sym]
@@ -342,7 +352,7 @@ def run_backtest(
                         pending_exit[sym] = ("signal_exit", 1.0)
 
             # e. new entry signals at this close
-            if sym not in open_pos and s["trad"][i]:
+            if sym not in open_pos and s["trad"][i] and not s["sess_end"][i]:
                 le, se = s["le"][i], s["se"][i]
                 if le != se:
                     pending_entry[sym] = 1 if le else -1
@@ -368,6 +378,20 @@ def run_backtest(
     tdf = pd.DataFrame([asdict(t) for t in trades])
     equity = pd.Series(eq_values, index=pd.DatetimeIndex(eq_index), name="equity", dtype=float)
     return BacktestResult(spec.id, dict(params or {}), tdf, equity, list(dict.fromkeys(warnings)), cfg)
+
+
+def session_end_mask(index: pd.DatetimeIndex, bar_td: pd.Timedelta) -> np.ndarray:
+    """True on the last bar of each US regular session: the bar ends at or after 16:00 New
+    York (DST-aware), or the next bar starts on a later New York date (early closes, gaps)."""
+    if len(index) == 0:
+        return np.zeros(0, dtype=bool)
+    start = index.tz_convert(NY)
+    end = (index + bar_td).tz_convert(NY)
+    day = start.normalize()
+    close_16 = day + pd.Timedelta(hours=16)
+    at_close = np.asarray(end >= close_16)
+    nxt = np.append(np.asarray(day[1:] != day[:-1]), True)
+    return at_close | nxt
 
 
 def _policy_from_spec(spec: StrategySpec) -> ReviewPolicy:

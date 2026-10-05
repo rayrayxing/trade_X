@@ -46,13 +46,17 @@ def pair_zscore(a: pd.DataFrame, b: pd.DataFrame, beta_window: int = 252, z_wind
     return (spread - spread.rolling(z_window).mean()) / spread.rolling(z_window).std()
 
 
-def session_columns(h1: pd.DataFrame) -> pd.DataFrame:
-    """For US 60-minute bars stamped at open time (see tradex.data.opend):
+def session_columns(h1: pd.DataFrame, bar: pd.Timedelta = pd.Timedelta(hours=1)) -> pd.DataFrame:
+    """For US intraday bars of length ``bar`` stamped at open time (see tradex.data.opend):
 
     first_bar  1 on the 09:30 bar
-    last_full  1 on the 14:30 bar (closes 15:30; acting on it fills at the 15:30 price)
+    last_full  1 on the bar that closes at 15:30 (14:30 for 60-minute bars, 15:00 for 30-minute
+               bars); acting on it fills at the 15:30 price
     gap        session open over the previous session's close - 1, on the first bar only
     first_ret  first bar's close over its open - 1, on the first bar only
+    fh_ret     first bar's close over the previous session's close - 1 (Gao, Han, Li and Zhou's
+               first-half-hour return; the first hour on 60-minute bars), on every bar from the first bar
+               on: known once the first bar closes, so later bars of the day may read it
     """
     t = h1.index.tz_convert(NY)
     first = (t.hour == 9) & (t.minute == 30)
@@ -61,10 +65,38 @@ def session_columns(h1: pd.DataFrame) -> pd.DataFrame:
     gap = h1["open"] / day.map(prev_close) - 1
     out = pd.DataFrame(index=h1.index)
     out["first_bar"] = first.astype(float)
-    out["last_full"] = ((t.hour == 14) & (t.minute == 30)).astype(float)
+    close_min = t.hour * 60 + t.minute + int(bar / pd.Timedelta(minutes=1))
+    out["last_full"] = (close_min == 15 * 60 + 30).astype(float)
     out["gap"] = np.where(first, gap, 0.0)
     out["first_ret"] = np.where(first, h1["close"] / h1["open"] - 1, 0.0)
+    fh = pd.Series(np.where(first, h1["close"] / day.map(prev_close).to_numpy() - 1, np.nan), index=h1.index)
+    out["fh_ret"] = fh.groupby(day).ffill()
     return out.fillna(0.0)
+
+
+def earnings_columns(d1: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
+    """For daily bars stamped 00:00 New York and an earnings table (tradex.data.earnings):
+
+    earn_day   1 on the reaction day: the release day for a release before or during the
+               session, the next session for one after the close; events with unknown
+               timing (the SEC filing-date proxy) are skipped
+    earn_jump  the reaction day's close over the previous close - 1, on that day only
+    """
+    out = pd.DataFrame({"earn_day": 0.0, "earn_jump": 0.0}, index=d1.index)
+    if events is None or not len(events) or d1.empty:
+        return out
+    days = d1.index.tz_convert(NY).normalize()
+    ret = d1["close"] / d1["close"].shift(1) - 1
+    for _, e in events.iterrows():
+        if e["timing"] not in ("before", "during", "after"):
+            continue
+        d = pd.Timestamp(e["date"]).tz_localize(NY) if pd.Timestamp(e["date"]).tzinfo is None \
+            else pd.Timestamp(e["date"]).tz_convert(NY).normalize()
+        pos = days.searchsorted(d, side="right" if e["timing"] == "after" else "left")
+        if pos < len(days) and (days[pos] - d).days <= 5:
+            out.iloc[pos, 0] = 1.0
+            out.iloc[pos, 1] = ret.iloc[pos] if not np.isnan(ret.iloc[pos]) else 0.0
+    return out
 
 
 def with_columns(bars: pd.DataFrame, cols: pd.DataFrame | dict[str, pd.Series]) -> pd.DataFrame:

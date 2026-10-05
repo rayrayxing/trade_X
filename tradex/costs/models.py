@@ -217,6 +217,9 @@ class OandaFxCosts:
     stress: float = 1.0
     mode: str = "backtest"
     spread_source: RateSource | None = None   # required in paper/live
+    # BACKTEST-ONLY: quoted spread in pips per bar open time, measured from Oanda bid/ask
+    # candles (tradex.data.oanda_history); the latest value at or before a fill is used.
+    measured_spreads: dict[str, pd.Series] | None = None
 
     def __post_init__(self):
         if self.rates is None:
@@ -227,6 +230,11 @@ class OandaFxCosts:
     def _spread(self, symbol: str, ts) -> float:
         if self.mode in STRICT_MODES:
             return self.spread_source.spread_pips(symbol, ts)   # raises RateMissing; no fallback
+        m = self.measured_spreads.get(symbol) if self.measured_spreads else None
+        if m is not None and len(m):
+            i = m.index.searchsorted(ts, side="right") - 1
+            if i >= 0:
+                return float(m.iloc[i])
         return self.spread_pips.get(symbol, self.default_spread_pips)
 
     def fill(self, symbol, side, mid, ts):

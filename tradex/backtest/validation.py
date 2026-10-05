@@ -118,8 +118,13 @@ def walk_forward(
     filter_ctx: dict | None = None,
     trials=None,
     data_key: str | None = None,
+    variant: str | None = None,
 ) -> ValidationReport:
-    """``trials`` is a TrialLedger; None uses the global one (``TRADEX_TRIALS_DB`` or data/research/)."""
+    """``trials`` is a TrialLedger; None uses the global one (``TRADEX_TRIALS_DB`` or data/research/).
+
+    ``variant`` names a change outside the parameters (another universe rule, a filter
+    switched on); it is recorded with each parameter set, so the same parameters under a
+    new variant count as new trials in the DSR's N."""
     from tradex.research.trials import TrialLedger
     trials = trials if trials is not None else TrialLedger()
     run_id = TrialLedger.new_run_id()
@@ -136,7 +141,7 @@ def walk_forward(
     warnings: list[str] = []
     for params in grid:
         s = spec.with_params(params)
-        sig = {sym: compute_signals(s, bars, filter_ctx) for sym, bars in data.items() if len(bars)}
+        sig = {sym: compute_signals(s, bars, filter_ctx, sym) for sym, bars in data.items() if len(bars)}
         for sym, sf in sig.items():
             warnings += [f"{sym}: {w}" for w in sf.warnings]
         variants.append((params, s, sig))
@@ -158,7 +163,8 @@ def walk_forward(
             sr = metrics.sharpe(res.daily_returns, annualise=False)
             scored.append((sr, len(res.trades), params, s, sig))
         trial_srs.append([x[0] for x in scored])
-        trials.record_many([dict(strategy_id=spec.id, version=spec.version, params=x[2], run_id=run_id, fold=k,
+        trials.record_many([dict(strategy_id=spec.id, version=spec.version, run_id=run_id, fold=k,
+                                 params=x[2] | ({"_variant": variant} if variant else {}),
                                  window=(tr_s, tr_e), data_key=data_key, sharpe=float(x[0]), trades=x[1])
                             for x in scored])
         eligible = [x for x in scored if x[1] >= wf.min_train_trades] or scored
