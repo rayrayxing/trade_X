@@ -49,7 +49,8 @@ PROPOSED = ROOT / "strategies" / "proposed"
 RESULTS = ROOT / "research" / "results"
 OANDA_CACHE = ROOT / "data" / "cache" / "oanda"
 EARNINGS_CACHE = earn.DEFAULT_CACHE
-PREVIOUS = RESULTS / "phase1_gate_run2.json"     # run 2 (screened universes, earnings, FX bid/ask), for the comparison
+PREVIOUS = RESULTS / "phase1_gate_run3.json"     # run 3 (proposed strategies, official macro inputs), for the comparison
+PREVIOUS_LABEL = "Run 3"
 
 SECTOR = {"NVDA": "XLK", "AMD": "XLK", "AAPL": "XLK", "MSFT": "XLK", "INTC": "XLK", "CSCO": "XLK", "ORCL": "XLK",
           "GOOGL": "XLK", "META": "XLK",   # XLC only exists from 2018; the old GICS home is used throughout
@@ -520,7 +521,7 @@ LABELS = {"costs_x2": "spread and slippage doubled", "screen_x2": "screened univ
 
 
 def _changes(rows: list[dict], previous: dict[str, dict]) -> list[str]:
-    out = ["| Strategy | Run 2 | This run | Result change |",
+    out = [f"| Strategy | {PREVIOUS_LABEL} | This run | Result change |",
            "|---|---|---|---|"]
     for r in rows:
         if r["result"] not in ("pass", "fail"):
@@ -583,7 +584,7 @@ def render_md(rows: list[dict], meta: dict) -> str:
         if r["result"] not in ("pass", "fail"):
             lines.append(f"| {r['catalog_name']} | {r['catalog_status']} | {r['result']} | {r['why']} |")
     if meta.get("previous"):
-        lines += ["", "## What changed vs run 2", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
+        lines += ["", f"## What changed vs {PREVIOUS_LABEL.lower()}", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
             _changes(rows, meta["previous"])
     lines += ["", "## Caveats", ""] + [f"- {c}" for c in meta["caveats"]]
     return "\n".join(lines) + "\n"
@@ -638,25 +639,28 @@ def main(argv: list[str] | None = None) -> int:
         "universe": (f"screened at every walk-forward test-fold start (and yearly before the first) from a pool of "
                      f"{len(STOCKS)} stocks (the S&P 100 as of Oct 2026 plus the first run's names) and {len(ETFS)} ETFs; "
                      f"top {SCREEN_N['stocks']} stocks, {SCREEN_N['etfs']} ETFs, or {SCREEN_N['all']} of both, ranked by "
-                     "trailing 60-day median dollar volume using bars before the screen date only."),
+                     "trailing 60-day median dollar volume using bars before the screen date only. The panic-rebound pool "
+                     f"variants take every ETF listed at the screen date: all of the {len(ETFS)}-ETF pool, or of a "
+                     f"{len(ETFS_WIDE)}-ETF pool that adds {len(ROUND3_ETFS)} equity ETFs."),
         "earnings_coverage": cov,
         "previous": previous,
         "changes": [
-            "Merged with the proposed-strategy work: the 11 strategies in strategies/proposed/ run here, built by "
-            "tradex.research.builders from injected calendars and rate histories. The three stock ones run on the "
-            "same liquidity screen as the seeds; the ETF ones keep their full index/sector-SPDR universe.",
-            "Policy rates for all eight currencies from the central banks' own data (FRED for the Fed, ECB, BoE, RBA, "
-            "BoC Valet, SNB data portal; BoJ and RBNZ via the BIS policy-rate dataset), cached in data/cache/macro. "
-            "The carry features and FX financing read this one file. CAD, CHF and NZD pairs now run, financed.",
-            "The bundled cost table tradex/costs/policy_rates.csv is rebuilt from the same official series (the old "
-            "one was written from memory: it missed the 2026 ECB, RBA and Fed moves and dated RBA changes a day early).",
-            "Scheduled FOMC meetings 2006-2027 from federalreserve.gov feed the pre-FOMC drift strategy; Cboe VIX daily "
-            "history feeds `etf-vix-panic-rebound`, the literal VIX>30 form of the panic-rebound entry (new).",
-            "Earnings strategies from the proposals read the run-2 earnings calendar (OpenD release dates and timing, "
-            "SEC filing-date proxies before that).",
-            "30-minute OpenD bars for the 22 ETFs (no new history quota: 124 of 300 still used): "
-            "`etf-intraday-momentum-m30` takes the first half hour as its signal and enters at 15:30 (new).",
-            "Trial ledger: every parameter set of every variant run here is recorded, so N grows for re-run strategies.",
+            "Pre-FOMC drift on daily bars back to 2006 (`etf-pre-fomc-drift-d1`, new): the H1 hypothesis held close to "
+            "close, from the close of the session before the statement day to the statement day's close, on the four "
+            "index ETFs and the nine original sector SPDRs. Both orders are market-on-close orders placed a session "
+            "ahead (new engine option `fill: next_close`), decided from the published FOMC schedule only. The H1 "
+            "version runs as before; the two count their trials together.",
+            "Panic rebound on more ETFs (four new pre-registered variants, rules and search space unchanged): "
+            "`-pool22` runs on every ETF of the 22-ETF pool listed at each screen date, `-pool34` adds 12 liquid "
+            "equity ETFs downloaded for this round (SMH, XBI, KRE, ITB, XHB, XOP, XRT, IBB, EWJ, EWZ, FXI, VWO; daily "
+            "bars, OpenD history quota 124 -> 136 of 300). All six panic-rebound specs count their trials together.",
+            "DSR's N can now span specs that test one hypothesis (`provenance.shares_trials_with`): the pre-FOMC pair "
+            "and the six panic-rebound specs. This raises N for the run-3 versions of those strategies.",
+            "Near misses (every rung passed except the deflated Sharpe) get a report-only robustness block: results "
+            "since 2016, each fold's test window rerun with doubled spread and slippage at the parameters it chose, and "
+            "a stationary-bootstrap interval of the out-of-sample Sharpe. Nothing about these strategies was changed.",
+            "Gate thresholds are unchanged (config/gates/thresholds.yaml is not touched).",
+            "Trial ledger kept: every parameter set run here is added, so N grows for re-run strategies.",
         ],
         "caveats": [
             "Survivorship bias remains: the candidate pool is today's S&P 100 and today's ETFs. OpenD has no delisted "
@@ -678,7 +682,13 @@ def main(argv: list[str] | None = None) -> int:
             "FX seeds' no_high_impact_news_30m filter is inactive: there is no historical macro calendar before 2026.",
             "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
             "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
-            "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years.",
+            "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years. "
+            "Of the 12 round-3 ETFs, OpenD serves daily bars from 2006 only for XRT, IBB, EWZ and FXI; the other eight start "
+            "in 2012 (their own listings are older), so the point-in-time screen admits them from 2012.",
+            "The daily pre-FOMC flags assume the exchange calendar is known in advance (it is published years ahead): the "
+            "backtest reads it from the bars. Scheduled meetings only; the March 2020 meeting, replaced by the 15 March "
+            "emergency cut, is not in the calendar, so no trade was planned for it. The statement-day close includes about "
+            "two hours of reaction after the 14:00 (14:15 before 2013) statement.",
             "DSR's N is every parameter set ever recorded for the strategy in the trial ledger, across all variants.",
         ],
     }
