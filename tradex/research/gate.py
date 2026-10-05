@@ -158,7 +158,8 @@ def build(builder: str, spec: StrategySpec, cache=OPEND_CACHE, members: pd.DataF
     the universe of the day; ``raw`` passes bars already loaded."""
     syms = [s for s in spec.universe if not s.startswith("$")]
     if builder in ("fx", "fx_momentum_xs"):
-        data = _fx(syms, spec.signal_tf)
+        financed = [s for s in syms if all(c in _rate_ccys() for c in s.split("_"))]
+        data = _fx(financed, spec.signal_tf)
         missing = [s for s in syms if s not in data]
         if builder == "fx_momentum_xs" and data:
             m = pd.DataFrame({s: panels.momentum(b) for s, b in data.items()})
@@ -200,6 +201,13 @@ def build(builder: str, spec: StrategySpec, cache=OPEND_CACHE, members: pd.DataF
 
 USD_LEGS = {"EUR": ("EUR_USD", False), "GBP": ("GBP_USD", False), "AUD": ("AUD_USD", False),
             "NZD": ("NZD_USD", False), "JPY": ("USD_JPY", True), "CAD": ("USD_CAD", True), "CHF": ("USD_CHF", True)}
+
+
+def _rate_ccys() -> set[str]:
+    """Currencies with a policy-rate history for financing. Pairs outside it (CAD, CHF, NZD
+    today) are left out rather than financed with a guessed rate."""
+    from tradex.costs.models import PolicyRates
+    return set(PolicyRates()._by_ccy)
 
 
 def _fx(pairs, tf) -> dict[str, pd.DataFrame]:
@@ -547,6 +555,8 @@ def main(argv: list[str] | None = None) -> int:
             "open (conservative)." + (f" Coverage starts late for: {', '.join(cov['starts_late'])}." if cov['starts_late'] else ""),
             "FX financing uses the bundled central-bank policy-rate estimates (tradex/costs/policy_rates.csv) minus "
             "Oanda's admin fee; Oanda does not publish historical financing rates.",
+            "FX pairs with CAD, CHF or NZD (USD_CAD, USD_CHF, NZD_USD) are left out of FX runs: the bundled "
+            "policy-rate table has no history for those currencies, and financing is not guessed.",
             "FX seeds' no_high_impact_news_30m filter is inactive: there is no historical macro calendar before 2026.",
             "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
             "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
