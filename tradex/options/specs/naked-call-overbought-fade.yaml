@@ -1,0 +1,35 @@
+id: opt-naked-call-overbought-fade
+version: 1
+asset_class: options
+structure: naked_call
+underlying: {asset_class: stocks}
+family: mean_reversion
+hypothesis: A stretched name (RSI above 75 and a 2-sigma z-score) stalls more often than it squeezes; selling a 20-delta call 20-45 days out collects the premium, with a buy-to-close stop always set.
+universe: [$watchlist, AAPL, MSFT, JPM, KO, XOM]
+timeframes: {signal: D1}
+features:
+  rsi14: {fn: talib.RSI, period: 14}
+  z20:   {fn: stat.zscore, ref: close, period: 20}
+entry:
+  short: "rsi14 > 75 and z20 > 2"
+exit:
+  stop_atr: 2.0          # buy back if the underlying rises this far; the premium stop below can fire first
+  target_r: 1.0
+  max_bars: 10
+holding: {expected_hours: 120}
+filters: [no_earnings_3d]
+option:
+  dte: {min: 20, max: 45}
+  strike: {by: delta, target: 0.20, tolerance: 0.08}
+  liquidity: {min_open_interest: 500, max_spread_pct: 0.10, min_bid: 0.30}
+  exit: {close_dte: 5}
+  naked:
+    stop_premium_mult: 2.0     # buy to close when the option trades at twice the credit
+    gap_pct: 0.20              # sized as if the underlying gaps a further 20% past the stop
+    earnings_buffer_days: 1
+    max_short_interest_pct_float: 20
+    max_days_to_cover: 5
+sizing: {model: gap_stressed_loss, cap_risk_pct: 1.0}
+search_space: {stop_atr: [1.5, 3.0], option.naked.stop_premium_mult: [1.5, 3.0]}
+provenance: {source: "mean-reversion family, premium selling", author: claude, created: 2026-10-04}
+status: proposed

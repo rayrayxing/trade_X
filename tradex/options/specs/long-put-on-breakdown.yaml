@@ -1,0 +1,30 @@
+id: opt-long-put-on-breakdown
+version: 1
+asset_class: options
+structure: long_put
+underlying: {asset_class: stocks}
+family: breakout
+hypothesis: A close below the 50-day low on heavy volume, under the 50-day average, tends to continue; a 40-delta put expresses it without the squeeze and borrow risk of shorting shares.
+universe: [$watchlist, NVDA, AMD, TSLA, META, AMZN]
+timeframes: {signal: D1}
+features:
+  lo50:   {fn: stat.lowest, ref: low, period: 50}
+  relvol: {fn: stat.rel_volume, period: 20}
+  ema50:  {fn: talib.EMA, period: 50}
+entry:
+  short: "close < lo50 and relvol > 1.5 and close < ema50"
+exit:
+  stop_atr: 2.0
+  target_r: 3.0
+  max_bars: 15
+holding: {expected_hours: 240}
+filters: [no_earnings_3d]
+option:
+  dte: {min: 30, max: 60}
+  strike: {by: delta, target: 0.40, tolerance: 0.12}
+  liquidity: {min_open_interest: 200, max_spread_pct: 0.12, min_bid: 0.20}
+  exit: {close_dte: 10, premium_stop_pct: 0.5, premium_target_mult: 1.0}
+sizing: {model: premium_at_risk, cap_risk_pct: 1.0}
+search_space: {stop_atr: [1.5, 3.0], option.strike.target: [0.3, 0.6]}
+provenance: {source: "breakout family, expressed with options", author: claude, created: 2026-10-04}
+status: proposed
