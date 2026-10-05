@@ -1,0 +1,31 @@
+diff --git a/tradex/dashboard/static/app.js b/tradex/dashboard/static/app.js
+index 3d0cdb9..7e2484c 100644
+--- a/tradex/dashboard/static/app.js
++++ b/tradex/dashboard/static/app.js
+@@ -384,7 +384,9 @@ async function performance() {
+ function filtersTable(rows) {
+   if (!rows.length) return empty("No blocked plans have been followed yet.");
+   return table([{ t: "Blocked by", f: (x) => x.blocked_by }, { t: "Plans", r: 1, f: (x) => x.plans }, { t: "They would have averaged", r: 1, f: (x) => h("span", { class: tone(x.mean_r) }, rr(x.mean_r)) },
+-    { t: "Would have won", r: 1, f: (x) => pct01(x.win_rate) }], rows);
++    { t: "Would have won", r: 1, f: (x) => pct01(x.win_rate) },
++    { t: "Net effect of blocking", r: 1, f: (x) => h("span", { class: tone(x.net_effect_r) }, rr(x.net_effect_r)) },
++    { t: "Read", f: (x) => pill(x.verdict, x.verdict === "saves R" ? "good" : x.verdict === "costs R" ? "bad" : "") }], rows);
+ }
+ 
+ // ---- Strategies ------------------------------------------------------------------------------------------
+diff --git a/tradex/dashboard/views.py b/tradex/dashboard/views.py
+index 0b899d0..dd1e77a 100644
+--- a/tradex/dashboard/views.py
++++ b/tradex/dashboard/views.py
+@@ -584,9 +584,8 @@ class Views:
+         return [{"day": k, "equity": v["equity_usd"]} for k, v in sorted(days.items())]
+ 
+     def _filters(self, cfs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+-        from tradex.core.counterfactual import filter_report
+-        df = filter_report(cfs)
+-        return df.to_dict("records")
++        from tradex.profit.whatif import gate_rows
++        return gate_rows(cfs)
+ 
+     # --- Strategies: forward vs backtest ------------------------------------------------
+ 
