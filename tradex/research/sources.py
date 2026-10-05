@@ -8,7 +8,8 @@ on a stand-in.
 
 File layouts (put the files under ``data/``; see research/proposals.md):
 
-  earnings   ``<root>/<SYMBOL>.csv``      columns: date[, when]   (when = bmo | amc | unknown)
+  earnings   ``<root>/<SYMBOL>.csv``      columns: date[, when]   (when = bmo | amc | unknown), or the
+             tradex.data.earnings cache layout date, timing, source (timing = before | during | after | unknown)
   events     ``<path>.csv``               column: time (UTC ISO)  or the YAML in data/calendar
   rates      ``<path>.csv``               columns: date, currency, rate (percent, effective date)
 """
@@ -21,6 +22,7 @@ import pandas as pd
 import yaml
 
 WHEN = ("bmo", "amc", "unknown")
+TIMING_TO_WHEN = {"before": "bmo", "during": "bmo", "after": "amc", "unknown": "unknown"}
 
 
 class DataUnavailable(RuntimeError):
@@ -65,7 +67,12 @@ class CsvEarningsCalendar:
         if "date" not in df.columns:
             raise ValueError(f"{p}: needs a 'date' column")
         out = pd.DataFrame({"date": pd.to_datetime(df["date"]).dt.tz_localize(None).dt.normalize()})
-        when = df["when"].fillna("unknown").astype(str).str.strip().str.lower() if "when" in df.columns else "unknown"
+        if "when" in df.columns:
+            when = df["when"].fillna("unknown").astype(str).str.strip().str.lower()
+        elif "timing" in df.columns:   # tradex.data.earnings: a release during the session reacts that day, like bmo
+            when = df["timing"].fillna("").astype(str).str.strip().str.lower().map(TIMING_TO_WHEN).fillna("unknown")
+        else:
+            when = "unknown"
         out["when"] = when
         bad = sorted(set(out["when"]) - set(WHEN)) if not isinstance(when, str) else []
         if bad:

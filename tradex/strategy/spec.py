@@ -52,9 +52,22 @@ def _no_news(bars: pd.DataFrame, ctx: dict) -> pd.Series:
 
 @register_filter("no_earnings_3d")
 def _no_earnings(bars: pd.DataFrame, ctx: dict) -> pd.Series:
-    """Blocks stock entries in the 3 calendar days before an earnings date (ctx['earnings'])."""
+    """Blocks stock entries in the 3 calendar days before an earnings date (ctx['earnings']).
+
+    ``ctx['earnings']`` is a list of dates, or a dict symbol -> dates read with
+    ``ctx['symbol']`` (tradex.data.earnings.filter_dates). A symbol present with no dates
+    (an ETF) has nothing to block; a symbol missing from the dict is reported as inactive.
+    """
     dates = ctx.get("earnings")
     allow = pd.Series(True, index=bars.index)
+    if isinstance(dates, dict):
+        sym = ctx.get("symbol")
+        if sym in dates:
+            if len(dates[sym]) == 0:
+                return allow
+            dates = dates[sym]
+        else:
+            dates = None
     if dates is None or len(dates) == 0:
         ctx.setdefault("warnings", []).append("no_earnings_3d: no earnings calendar supplied, filter inactive")
         return allow
@@ -75,6 +88,7 @@ class ExitRules:
     trail_atr: float | None = None     # trail the stop at this many ATR once in profit
     long_when: str | None = None       # optional signal exit rules
     short_when: str | None = None
+    session_close: bool = False        # stocks: flat at the US regular-session close (16:00 New York)
 
 
 @dataclass
@@ -262,8 +276,11 @@ class SignalFrame:
     warnings: list[str]
 
 
-def compute_signals(spec: StrategySpec, bars: pd.DataFrame, filter_ctx: dict | None = None) -> SignalFrame:
-    """Boolean entry/exit series known at each bar's CLOSE (act at the next open)."""
+def compute_signals(spec: StrategySpec, bars: pd.DataFrame, filter_ctx: dict | None = None,
+                    symbol: str | None = None) -> SignalFrame:
+    """Boolean entry/exit series known at each bar's CLOSE (act at the next open).
+
+    ``symbol`` lets per-symbol filter data (earnings dates) be picked out of ``filter_ctx``."""
     feats = compute_features(spec, bars)
     env = {k: bars[k] for k in BAR_NAMES} | feats
     idx = bars.index
@@ -272,6 +289,8 @@ def compute_signals(spec: StrategySpec, bars: pd.DataFrame, filter_ctx: dict | N
     se = expr.evaluate(spec.entry["short"], env, idx) if spec.entry.get("short") else false
     fctx = dict(filter_ctx or {})
     fctx.setdefault("warnings", [])
+    if symbol is not None:
+        fctx["symbol"] = symbol
     for flt in spec.filters:
         allow = FILTERS[flt](bars, fctx).reindex(idx, fill_value=True)
         le, se = le & allow, se & allow

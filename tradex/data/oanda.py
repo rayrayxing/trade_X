@@ -48,59 +48,21 @@ def _http_get(url: str, headers: dict[str, str]) -> dict:
 
 
 # --- candles -----------------------------------------------------------------------------
-
-CANDLE_COLS = ["bid_open", "bid_high", "bid_low", "bid_close", "ask_open", "ask_high", "ask_low", "ask_close",
-               "open", "high", "low", "close", "volume"]
-
-
-def _empty() -> pd.DataFrame:
-    return pd.DataFrame(columns=CANDLE_COLS, index=pd.DatetimeIndex([], tz="UTC", name="ts")).astype(float)
-
+# One implementation of bid/ask candle download lives in tradex.data.oanda_history (paging,
+# retries, CSV cache, practice host only); these names are kept for existing callers.
 
 def parse_ba_candles(candles: Iterable[dict]) -> pd.DataFrame:
     """Complete candles only. ``open..close`` are mid (average of bid and ask) for the engine."""
-    rows = []
-    for c in candles:
-        if not c.get("complete", True):
-            continue
-        b, a = c["bid"], c["ask"]
-        r = {"timestamp": c["time"], "volume": float(c["volume"])}
-        for k, n in (("o", "open"), ("h", "high"), ("l", "low"), ("c", "close")):
-            r[f"bid_{n}"], r[f"ask_{n}"] = float(b[k]), float(a[k])
-            r[n] = (r[f"bid_{n}"] + r[f"ask_{n}"]) / 2
-        rows.append(r)
-    if not rows:
-        return _empty()
-    df = pd.DataFrame(rows)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    df = df.set_index("timestamp")
-    df.index = df.index.astype("datetime64[ns, UTC]")
-    df.index.name = "ts"
-    return df[~df.index.duplicated(keep="last")].sort_index()[CANDLE_COLS]
+    from tradex.data.oanda_history import parse_candles
+    return parse_candles(candles)
 
 
 def fetch_ba_candles(instrument: str, tf: str, start: str, end: str, *, token: str | None = None,
                      http: Callable[[str, dict], dict] = _http_get, page: int = 5000) -> pd.DataFrame:
-    """Bid/ask/mid candles (price=BA) over [start, end), paged by ``count`` from a moving cursor."""
-    headers = {"Authorization": f"Bearer {token or secrets.get('oanda_token')}"}
-    cursor, stop = pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC")
-    parts = []
-    while cursor < stop:
-        q = {"granularity": GRANULARITY[tf], "price": "BA", "from": cursor.isoformat(), "count": page}
-        raw = http(f"https://{REST_HOST}/v3/instruments/{instrument}/candles?{urllib.parse.urlencode(q)}",
-                   headers).get("candles", [])
-        if not raw:
-            break
-        parts.append(parse_ba_candles(raw))
-        last = pd.Timestamp(raw[-1]["time"])
-        if len(raw) < page or last <= cursor:
-            break
-        cursor = last + pd.Timedelta(seconds=1)
-    if not parts:
-        return _empty()
-    out = pd.concat(parts)
-    out = out[~out.index.duplicated(keep="last")].sort_index()
-    return out[out.index < stop]
+    """Bid/ask/mid candles (price=BA) over [start, end), uncached; see OandaHistory.download."""
+    from tradex.data.oanda_history import OandaHistory
+    h = OandaHistory(token=token, http=http, page=page, pause_s=0.0)
+    return h.download(instrument, tf, pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC"))
 
 
 def measured_spread_pips(ba: pd.DataFrame, instrument: str) -> float:
