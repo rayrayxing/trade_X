@@ -1,0 +1,21 @@
+# Named historical shock windows for the ruin radar (tradex/profit/ruin.py).
+#
+# Dates only. The size of each shock is computed from the actual daily factor returns inside
+# the window (FX:<ccy> and EQ:<symbol>), so nothing here is a remembered magnitude. A window
+# the price history does not cover is reported as "no data" and never treated as safe.
+# The dates are the episodes' commonly cited peak-to-trough days, written from memory on
+# 5 Oct 2026: check them against a chart before leaning on one. Add or trim windows freely;
+# this file is not a protected path and the radar only reads it.
+windows:
+  - {name: snb_2015_01_franc_unpeg,   start: 2015-01-14, end: 2015-01-16, note: "SNB drops the EURCHF 1.20 floor"}
+  - {name: 2015_08_china_devaluation,  start: 2015-08-18, end: 2015-08-25, note: "yuan devaluation, August equity flash crash"}
+  - {name: 2016_06_brexit_vote,        start: 2016-06-23, end: 2016-06-27, note: "GBP gap lower on the referendum result"}
+  - {name: 2018_02_volmageddon,        start: 2018-02-02, end: 2018-02-08, note: "equity volatility spike, short-vol products collapse"}
+  - {name: 2019_01_jpy_flash_crash,    start: 2019-01-02, end: 2019-01-04, note: "thin-liquidity yen spike in Asian hours"}
+  - {name: 2020_03_covid_crash,        start: 2020-02-19, end: 2020-03-23, note: "equities peak to trough; dollar squeeze"}
+  - {name: 2020_03_dash_for_dollars,   start: 2020-03-09, end: 2020-03-20, note: "dollar funding squeeze: AUD, GBP, EM sold hardest"}
+  - {name: 2022_02_ukraine_invasion,   start: 2022-02-23, end: 2022-03-08, note: "risk-off, commodity and EUR shock"}
+  - {name: 2022_09_gbp_mini_budget,    start: 2022-09-22, end: 2022-09-27, note: "GBP to a record low against USD"}
+  - {name: 2023_03_regional_banks,     start: 2023-03-08, end: 2023-03-15, note: "SVB failure, bank equities and USD funding"}
+  - {name: 2024_08_yen_carry_unwind,   start: 2024-07-31, end: 2024-08-05, note: "USDJPY about 155 to 142, equities sold"}
+  - {name: 2025_04_tariff_shock,       start: 2025-04-02, end: 2025-04-08, note: "tariff announcement, equities and the dollar fall together"}

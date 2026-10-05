@@ -1,0 +1,22 @@
+# Exit engine policy (tradex/profit/exits.py). Not a protected path: it changes how open trades are
+# managed, never the risk gate's size. Every number is a starting point to be judged on the ledger with
+# `python -m tradex.profit exits` (paired R against the plain stop/T1/time-stop baseline) before it is relied on.
+exits:
+  breakeven_r: 1.0              # move the stop to entry (+ round-trip cost) once a close is this many R in profit
+  breakeven_buffer_r: null      # null: the plan's own cost_r
+  breakeven_after_partial: true # also after target 1 is taken
+  trail: atr                    # none | atr | structure | tighter
+  trail_start_r: 1.5            # best close in R before the trail arms
+  trail_atr_mult: 3.0
+  structure_lookback: 5
+  structure_buffer_atr: 0.1
+  min_stop_gap_atr: 0.25        # a stop never goes closer than this to the last close
+  partials: [0.5]               # share of the ORIGINAL position closed at T1, T2, ...; the last target takes the rest
+  time_stop: true
+  progress_frac: null           # e.g. 0.5: close early if the best close is still under progress_min_r
+  progress_min_r: 0.3
+  shock_atr_mult: 3.0           # a bar this many ATR wide closing hard against the position closes it
+  shock_body_frac: 0.5
+  expand_mult: null             # e.g. 1.8: when ATR is this multiple of its entry value, tighten the trail
+  expand_trail_mult: 1.5
+  atr_period: 14
