@@ -118,6 +118,36 @@ def test_active_shrink_cuts_size_and_never_increases():
     assert len(f) == 1 and f[0]["qty"] == q // 2
 
 
+def _first_aaa_entry(led):
+    return next(o for o in led.rows(kind="order") if o["book"] == "ensemble" and o["symbol"] == "AAA"
+                and o["purpose"].startswith("entry"))
+
+
+def test_a_standing_shrink_is_applied_once_not_twice():
+    """0.5 must size about half of what the gate approved. It once also went into the gate's own risk
+    budget, so the order came out at about a quarter."""
+    frames = _frames()
+    base_led = Ledger(":memory:", git_commit="t")
+    run_replay(_two_family_specs(), frames, base_led, frames["AAA"].index[260], cfg=CoreConfig(agents_mode="active"))
+    led = Ledger(":memory:", git_commit="t")
+    led.add_agent_inbox(T, "scout", "shrink", "AAA", {"factor": 0.5, "until": "2100-01-01", "reason": "thin book"})
+    run_replay(_two_family_specs(), frames, led, frames["AAA"].index[260], cfg=CoreConfig(agents_mode="active"))
+    base, cut = _first_aaa_entry(base_led), _first_aaa_entry(led)
+    approved = next(v for v in led.rows(kind="verdict") if v["decision_id"] == cut["decision_id"])
+    base_v = next(v for v in base_led.rows(kind="verdict") if v["decision_id"] == base["decision_id"])
+    assert approved["qty"] == base_v["qty"] == base["qty"]          # the gate's own size did not move
+    assert cut["qty"] == float(int(base["qty"] * 0.5 + 1e-9)) and cut["purpose"].startswith("entry: agent shrink")
+    assert approved["checks"]["kelly"]["size_factor"] == 1.0
+
+
+def test_calendar_halving_reaches_the_gate_not_dropped_by_the_agent_factor():
+    c = Core("active")
+    c.core.calendar.check = lambda *a, **k: (None, 0.5, [])
+    c.until(lambda: c.led.rows(kind="verdict"))
+    v = c.led.rows(kind="verdict")[0]
+    assert v["checks"]["kelly"]["size_factor"] == 0.5
+
+
 def test_close_request_sends_a_reducing_exit_through_the_guard():
     c = Core("active")
     c.until(lambda: c.core.agent_positions())

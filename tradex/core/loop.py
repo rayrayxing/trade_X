@@ -362,7 +362,7 @@ class TradingCore:
             return
         # gate 3: context, subtract only
         hold_end = close_t + duration(plan.tf or tf) * plan.max_bars
-        veto, factor, _ = self.calendar.check(plan.symbol, plan.asset_class, close_t, hold_end)
+        veto, cal_factor, _ = self.calendar.check(plan.symbol, plan.asset_class, close_t, hold_end)
         if veto:
             self._block(plan, "calendar", veto, close_t)
             return
@@ -370,9 +370,9 @@ class TradingCore:
         if sv:
             self._block(plan, "short_check", sv, close_t)
             return
-        factor = 1.0
+        agent_factor = 1.0
         if book == "ensemble":
-            rule, factor = self.desk.at_gate(plan, close_t)
+            rule, agent_factor = self.desk.at_gate(plan, close_t)
             if rule is not None:
                 self._block(plan, f"agent:{rule.source}", rule.reason, close_t)
                 return
@@ -395,7 +395,7 @@ class TradingCore:
                             + sum(cm.order_fees(plan.symbol, -plan.direction, q, plan.targets[0], close_t).values()))
         state = BookState(eq, legs, self.tier, fx, q_margin, margin)
         promoted = book == "ensemble" and all(self.spec_by_id[s].status == "live" for s in plan.strategies)
-        verdict = self.gate.review(plan, state, bu, fee_fn, factor, promoted)
+        verdict = self.gate.review(plan, state, bu, fee_fn, cal_factor, promoted)   # the calendar's halving sizes inside the gate
         verdict.verdict_id = f"{did}-v"
         self.ledger.append(verdict)
         if verdict.outcome != "accepted":
@@ -405,9 +405,10 @@ class TradingCore:
         if insane:
             self._block(plan, "sanity", insane, close_t)
             return
-        qty = verdict.qty if factor >= 1.0 else shrink_qty(verdict.qty, factor)
+        # an agent's shrink applies once, to the size the gate approved (never inside the gate as well)
+        qty = verdict.qty if agent_factor >= 1.0 else shrink_qty(verdict.qty, agent_factor)
         if qty <= 0:
-            self._block(plan, "agent", f"agent shrink {factor:g} leaves no size", close_t)
+            self._block(plan, "agent", f"agent shrink {agent_factor:g} leaves no size", close_t)
             return
         side = plan.direction
         req = OrderRequest(f"{did}-entry", did, plan.symbol, plan.asset_class, side, qty, "market", None,
@@ -417,7 +418,7 @@ class TradingCore:
                         "broker error", close_t)
             return
         self.ledger.append(Order(did, req.client_order_id, close_t.isoformat(), plan.symbol, side, qty,
-                                 "market", None, "entry" if factor >= 1.0 else f"entry: agent shrink {factor:g}",
+                                 "market", None, "entry" if agent_factor >= 1.0 else f"entry: agent shrink {agent_factor:g}",
                                  book))
         # the finest-timeframe agreeing strategy manages the position: its bars count the time stop
         mgr = next((s for s in plan.strategies if self.spec_by_id[s].signal_tf == plan.tf), plan.strategies[0])
