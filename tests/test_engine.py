@@ -16,6 +16,8 @@ ZERO_COST = dict(platform_fee=0.0, settlement_fee_per_share=0.0, sec_fee_rate=0.
 def test_seed_strategies_have_no_lookahead(stock_data, fx_data):
     """Signals at bar t must not change when future bars are removed."""
     for spec in load_dir("strategies"):
+        if any(f.get("fn") == "data.column" for f in spec.features.values()):
+            continue  # reads research columns the bars do not carry; tests/test_proposed.py covers these
         data = stock_data if spec.asset_class == "stocks" else fx_data
         sym = next(iter(data))
         bars = data[sym]

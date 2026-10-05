@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Agent worker: runs queued agent jobs through the model gateway. Writes only agent_inbox rows. -->
+    <key>Label</key>
+    <string>com.tradex.agent-worker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__TRADEX_HOME__/ops/bin/run-service.sh</string>
+        <string>agent-worker</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__TRADEX_HOME__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>TRADEX_HOME</key>
+        <string>__TRADEX_HOME__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/tradex/agent-worker.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/tradex/agent-worker.err.log</string>
+</dict>
+</plist>

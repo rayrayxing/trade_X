@@ -116,3 +116,42 @@ def test_missing_fx_rate_in_paper_blocks_instead_of_guessing():
     led2 = Ledger(":memory:")                                           # replay may still use the rough constant
     run_replay(specs, frames, led2, frames["EUR_JPY"].index[1000], use_es=False)
     assert not [v for v in led2.rows(kind="veto") if v["source"] == "data"]
+
+
+def test_mixed_timeframe_votes_form_one_plan_with_the_shortest_time_stop():
+    """An H4 vote stays valid until the next H4 close, so H1 closes in between combine it
+    with fresh H1 votes; the time stop is the shorter in time, counted in H1 bars, and the
+    entry fills at the next H1 open."""
+    frames = _fx_frames()
+    start = frames["EUR_USD"].index[700]
+
+    def specs():
+        s = _mixed_specs()
+        s[1].exit.max_bars = 3                                         # 3 H4 bars = 12 H1 bars < 20 H1 bars
+        return s
+    rep = run_replay(specs(), frames, Ledger(":memory:", git_commit="t"), start, use_es=False)
+    live = run_live(specs(), frames, start, use_es=False)
+    assert _decisions(live) == _decisions(rep.ledger)
+    led = rep.ledger
+    both = [p for p in led.rows(kind="plan") if p["book"] == "ensemble" and set(p["strategies"]) == {"h1-trend", "h4-mom"}]
+    assert both and all(p["families"] == ["momentum", "trend"] for p in both)
+    assert all(p["tf"] == "H1" and p["max_bars"] == 12 for p in both)
+    assert any(pd.Timestamp(p["time"]).hour % 4 for p in both)        # formed between H4 closes
+    for p in both:
+        t = pd.Timestamp(p["time"])
+        h4 = [v for v in led.rows(kind="vote", decision_id=p["decision_id"]) if v["strategy_id"] == "h4-mom"]
+        assert len(h4) == 1 and t - pd.Timedelta(hours=4) < pd.Timestamp(h4[0]["time"]) <= t
+    traded = [p for p in both if led.rows(kind="fill", decision_id=p["decision_id"])]
+    assert traded
+    for p in traded:
+        assert led.rows(kind="fill", decision_id=p["decision_id"])[0]["time"] == p["time"]   # next H1 open
+
+
+def test_votes_expire_at_their_timeframes_next_close():
+    frames = _fx_frames()
+    start = frames["EUR_USD"].index[700]
+    led = run_replay(_mixed_specs(), frames, Ledger(":memory:", git_commit="t"), start, use_es=False).ledger
+    for p in led.rows(kind="plan"):
+        t = pd.Timestamp(p["time"])
+        for v in led.rows(kind="vote", decision_id=p["decision_id"]):
+            assert t < pd.Timestamp(v["time"]) + duration(v["tf"]) and pd.Timestamp(v["time"]) <= t

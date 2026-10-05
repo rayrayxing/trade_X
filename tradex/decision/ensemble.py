@@ -11,7 +11,11 @@ Prices from the agreeing votes:
 - stop: the farthest of their stops, so the thesis is invalid only when every agreeing
   strategy is invalidated (size comes from this distance, so the risk in dollars is the same)
 - target 1: the nearest of their targets; target 2: the farthest
-- time stop: the shortest of their limits
+- time stop: the shortest of their limits in time, counted in bars of the finest timeframe
+  among them (votes from different timeframes can agree: a higher-timeframe vote stays
+  valid until that timeframe's next close, so H1 and H4 strategies can form one plan)
+- entry reference and plan time: the freshest vote's (the close being decided); a plan whose
+  price is already through a held vote's stop, or past every target, is not traded
 
 Probability is the mean of the agreeing strategies' measured hit rates, labelled
 ``base_rate`` until the meta-label size model is calibrated in paper.
@@ -25,6 +29,7 @@ import pandas as pd
 
 from tradex.core.records import TradePlan, Vote
 from tradex.costs.models import CostModel
+from tradex.timeframes import duration
 
 DEFAULT_HIT_RATE = 0.40
 
@@ -80,27 +85,33 @@ def finalise(votes: list[Vote], decision_id: str, rules: PlanRules, cost: CostMo
     oppose = max((s for d, s, _ in fams.values() if d != direction), default=0.0)
     agreeing = [v for v in votes if v.family in agree and v.direction == direction]
 
-    v0 = agreeing[0]
+    v0 = max(votes, key=lambda v: (pd.Timestamp(v.time), -_dur(v.tf)))      # the decision time; first on ties
     entry = v0.entry_ref
     stops = [v.stop for v in agreeing]
     stop = min(stops) if direction > 0 else max(stops)
     tgts = sorted({t for v in agreeing for t in v.targets}, key=lambda t: abs(t - entry))
-    t1, t2 = tgts[0], tgts[-1]
+    ahead = [t for t in tgts if direction * (t - entry) > 0]              # a held vote's target may be behind price
+    t1, t2 = (ahead or tgts)[0], (ahead or tgts)[-1]
     _, unit = cost.fill(v0.symbol, direction, entry, pd.Timestamp(v0.time))
     cost_u = 2 * (unit["spread"] + unit["slippage"])
     risk = abs(entry - stop)
     rr = (abs(t1 - entry) - cost_u) / (risk + cost_u) if risk > 0 else 0.0
     p = float(np.mean([v.strength for v in agreeing]))
+    max_bars, tf = _time_stop(agreeing, v0)
     plan = TradePlan(
         decision_id=decision_id, time=v0.time, symbol=v0.symbol, asset_class=v0.asset_class,
         direction=direction, entry_type="market", entry_price=entry, stop=stop,
-        targets=[t1] if t1 == t2 else [t1, t2], max_bars=min(v.max_bars for v in agreeing),
-        invalidation=f"price trades through {stop:.5g}, or the time stop of {min(v.max_bars for v in agreeing)} bars passes",
+        targets=[t1] if t1 == t2 else [t1, t2], max_bars=max_bars,
+        invalidation=f"price trades through {stop:.5g}, or the time stop of {max_bars} {tf or 'signal'} bars passes",
         families=sorted(agree), strategies=sorted(v.strategy_id for v in agreeing),
         score=round(abs(score), 4), p_target=round(p, 4), p_source="base_rate",
         reward_risk=round(rr, 4), ev_r=round(p * rr - (1 - p), 4),
-        cost_r=round(cost_u / risk, 4) if risk else 0.0, book=book,
+        cost_r=round(cost_u / risk, 4) if risk else 0.0, book=book, tf=tf,
     )
+    if direction * (entry - stop) <= 0:
+        return plan, f"price {entry:.5g} is already through the stop {stop:.5g} of a held vote"
+    if not ahead:
+        return plan, f"price {entry:.5g} is already past every target"
     if len(agree) < rules.min_families:
         return plan, f"only {len(agree)} famil{'y' if len(agree) == 1 else 'ies'} agree ({', '.join(sorted(agree))}); need {rules.min_families}"
     if oppose > rules.max_opposing_strength:
@@ -110,6 +121,19 @@ def finalise(votes: list[Vote], decision_id: str, rules: PlanRules, cost: CostMo
     if rr < rules.min_reward_risk:
         return plan, f"reward to risk {rr:.2f} after costs below {rules.min_reward_risk}"
     return plan, ""
+
+
+def _dur(tf: str) -> pd.Timedelta:
+    return duration(tf) if tf else pd.Timedelta(0)
+
+
+def _time_stop(agreeing: list[Vote], v0: Vote) -> tuple[int, str]:
+    """(bars, timeframe): the shortest time limit among the votes, in bars of the finest timeframe."""
+    if not all(v.tf for v in agreeing):
+        return min(v.max_bars for v in agreeing), v0.tf
+    fine = min((v.tf for v in agreeing), key=duration)
+    horizon = min(v.max_bars * duration(v.tf) for v in agreeing)
+    return max(1, int(horizon // duration(fine))), fine
 
 
 def merge_correlated_families(signals: dict[str, pd.Series], declared: dict[str, str], threshold: float = 0.7

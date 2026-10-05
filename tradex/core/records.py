@@ -102,6 +102,7 @@ class Vote(Record):
     knowable_at: str                  # when the signal became knowable (bar close or later confirmation)
     decision_id: str = ""             # set when the vote is part of a plan
     book: str = "ensemble"
+    tf: str = ""                      # the strategy's signal timeframe; the vote is valid until its next close
     kind: str = field(init=False, default="vote")
 
 
@@ -128,6 +129,7 @@ class TradePlan(Record):
     ev_r: float                       # expected value in R after costs
     cost_r: float                     # round-trip cost in R
     book: str = "ensemble"            # "ensemble" or "virtual:<strategy_id>"
+    tf: str = ""                      # finest timeframe among the agreeing votes: max_bars counts its bars
     kind: str = field(init=False, default="plan")
 
     @property

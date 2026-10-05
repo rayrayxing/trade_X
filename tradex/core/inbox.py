@@ -80,12 +80,13 @@ class IngestResult:
     result: str
 
 
-Handler = Callable[[dict[str, Any]], str]
+Handler = Callable[[dict[str, Any]], "str | tuple[str, bool]"]   # result text, or (text, applied)
 
 
 def ingest_inbox(ledger: Ledger, time: str, handlers: dict[str, Handler] | None = None) -> list[IngestResult]:
     """Core-side: apply pending inbox rows. ``handlers[action](row) -> result text`` does the work
-    (veto a plan, shrink a size, close a position, flag for review). Unknown actions, actions
+    (veto a plan, shrink a size, close a position, flag for review). A handler that only records
+    what it would have done (agents in shadow mode) returns ``(text, False)``. Unknown actions, actions
     without a handler and handlers that raise are logged and ignored; nothing here can crash the bar.
     Each row is marked once, so re-running ingest never applies it twice."""
     handlers = handlers or {}
@@ -106,7 +107,8 @@ def ingest_inbox(ledger: Ledger, time: str, handlers: dict[str, Handler] | None 
             res = "ignored: no handler"
         else:
             try:
-                res, applied = handlers[action](row), True
+                got = handlers[action](row)
+                res, applied = got if isinstance(got, tuple) else (got, True)
             except Exception as exc:  # noqa: BLE001 - a bad agent row must not stop trading
                 res = f"ignored: handler failed ({type(exc).__name__})"
         with ledger._lock, ledger.db:
