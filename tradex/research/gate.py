@@ -49,7 +49,7 @@ PROPOSED = ROOT / "strategies" / "proposed"
 RESULTS = ROOT / "research" / "results"
 OANDA_CACHE = ROOT / "data" / "cache" / "oanda"
 EARNINGS_CACHE = earn.DEFAULT_CACHE
-PREVIOUS = RESULTS / "phase1_gate_run1.json"     # first gate run (hand-picked universes), for the comparison
+PREVIOUS = RESULTS / "phase1_gate_run2.json"     # run 2 (screened universes, earnings, FX bid/ask), for the comparison
 
 SECTOR = {"NVDA": "XLK", "AMD": "XLK", "AAPL": "XLK", "MSFT": "XLK", "INTC": "XLK", "CSCO": "XLK", "ORCL": "XLK",
           "GOOGL": "XLK", "META": "XLK",   # XLC only exists from 2018; the old GICS home is used throughout
@@ -463,7 +463,7 @@ LABELS = {"costs_x2": "spread and slippage doubled", "screen_x2": "screened univ
 
 
 def _changes(rows: list[dict], previous: dict[str, dict]) -> list[str]:
-    out = ["| Strategy | First run (hand-picked universe, no earnings filter) | This run | Result change |",
+    out = ["| Strategy | Run 2 | This run | Result change |",
            "|---|---|---|---|"]
     for r in rows:
         if r["result"] not in ("pass", "fail"):
@@ -489,7 +489,7 @@ def render_md(rows: list[dict], meta: dict) -> str:
         f"Stage-3 thresholds from `config/gates/thresholds.yaml`: {meta['thresholds']}.",
         f"Walk-forward: {meta['walk_forward']}. Engine: {meta['engine']}. "
         "Costs: moomoo SG fees and default spread/slippage for US stocks; for FX the spread Oanda quoted at each "
-        "bar's open plus 0.2 pip slippage, and financing from the bundled policy-rate estimates.",
+        "bar's open plus 0.2 pip slippage, and financing from official central-bank policy rates (data/cache/macro).",
         f"US universes: {meta['universe']}",
         "", f"**{len(passed)} of {len(ran)} strategies run pass the gate.** "
         f"{sum(r['result'] == 'needs data' for r in rows)} need data, "
@@ -525,7 +525,7 @@ def render_md(rows: list[dict], meta: dict) -> str:
         if r["result"] not in ("pass", "fail"):
             lines.append(f"| {r['catalog_name']} | {r['catalog_status']} | {r['result']} | {r['why']} |")
     if meta.get("previous"):
-        lines += ["", "## What changed vs the first run", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
+        lines += ["", "## What changed vs run 2", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
             _changes(rows, meta["previous"])
     lines += ["", "## Caveats", ""] + [f"- {c}" for c in meta["caveats"]]
     return "\n".join(lines) + "\n"
@@ -584,19 +584,21 @@ def main(argv: list[str] | None = None) -> int:
         "earnings_coverage": cov,
         "previous": previous,
         "changes": [
-            "Stock and ETF strategies run on a point-in-time liquidity screen over a 102-stock, 22-ETF pool instead of "
-            "the symbols each spec names (80 more OpenD symbols fetched; history quota 124 of 300 used).",
-            f"Earnings calendar wired in: `no_earnings_3d` blocks entries 3 days before a report and the position "
-            f"reviewer exits ahead of one. {cov['symbols']} stocks covered; reports by source {cov['reports_by_source']} "
-            "(OpenD = real release date and before/after-market timing; sec_8k_2.02 = SEC 8-K item 2.02 filing-date proxy; "
-            "sec_10q_10k = 10-Q/10-K filing-date proxy, weaker).",
-            "Engine: `exit.session_close` flattens intraday strategies at the 16:00 New York close (DST-aware; early "
-            "closes too), so intraday momentum is now tested.",
-            "FX: ten years of Oanda practice bid/ask H1/H4/D candles for nine pairs; FX seeds and the FX leg of the joint "
-            "time-series/cross-sectional entry run with the spread quoted at each bar.",
-            "New strategies: `etf-intraday-momentum`, `stk-earnings-jump`, `fx-ts-xs-momentum`.",
-            "Trial ledger: the screened universe and the earnings filter are recorded as a new variant of each strategy, "
-            "so every parameter set re-run here adds to the DSR's N.",
+            "Merged with the proposed-strategy work: the 11 strategies in strategies/proposed/ run here, built by "
+            "tradex.research.builders from injected calendars and rate histories. The three stock ones run on the "
+            "same liquidity screen as the seeds; the ETF ones keep their full index/sector-SPDR universe.",
+            "Policy rates for all eight currencies from the central banks' own data (FRED for the Fed, ECB, BoE, RBA, "
+            "BoC Valet, SNB data portal; BoJ and RBNZ via the BIS policy-rate dataset), cached in data/cache/macro. "
+            "The carry features and FX financing read this one file. CAD, CHF and NZD pairs now run, financed.",
+            "The bundled cost table tradex/costs/policy_rates.csv is rebuilt from the same official series (the old "
+            "one was written from memory: it missed the 2026 ECB, RBA and Fed moves and dated RBA changes a day early).",
+            "Scheduled FOMC meetings 2006-2027 from federalreserve.gov feed the pre-FOMC drift strategy; Cboe VIX daily "
+            "history feeds `etf-vix-panic-rebound`, the literal VIX>30 form of the panic-rebound entry (new).",
+            "Earnings strategies from the proposals read the run-2 earnings calendar (OpenD release dates and timing, "
+            "SEC filing-date proxies before that).",
+            "30-minute OpenD bars for the 22 ETFs (no new history quota: 124 of 300 still used): "
+            "`etf-intraday-momentum-m30` takes the first half hour as its signal and enters at 15:30 (new).",
+            "Trial ledger: every parameter set of every variant run here is recorded, so N grows for re-run strategies.",
         ],
         "caveats": [
             "Survivorship bias remains: the candidate pool is today's S&P 100 and today's ETFs. OpenD has no delisted "
@@ -607,10 +609,14 @@ def main(argv: list[str] | None = None) -> int:
             "Earnings dates before OpenD's coverage (about 2013 on) are SEC filing dates, a proxy: they can lag the "
             "release by a day and their before/after-market timing is unknown, so both filters treat them as before the "
             "open (conservative)." + (f" Coverage starts late for: {', '.join(cov['starts_late'])}." if cov['starts_late'] else ""),
-            "FX financing uses the bundled central-bank policy-rate estimates (tradex/costs/policy_rates.csv) minus "
-            "Oanda's admin fee; Oanda does not publish historical financing rates.",
-            "FX pairs with CAD, CHF or NZD (USD_CAD, USD_CHF, NZD_USD) are left out of FX runs: the bundled "
-            "policy-rate table has no history for those currencies, and financing is not guessed.",
+            "FX financing is the official policy-rate differential minus Oanda's admin fee; Oanda does not publish "
+            "historical financing rates, so actual swap rates (which track interbank rates, not policy rates) differ.",
+            "JPY and NZD rates are the BIS compilation of the BoJ and RBNZ series (rbnz.govt.nz refuses scripted "
+            "downloads; BoJ has no policy-rate series). The BIS JPY series holds 0.05% (the 0-0.1% call-rate "
+            "guideline) until 2016-09-21 and -0.1% from then. Swiss rates before 2019-06-13 are the SNB's 3-month "
+            "Libor target-range midpoint, dated at month end (up to a month late, never early).",
+            "FOMC statement times are not on the Fed's calendar pages: 14:00 New York from 2013 (12:30 on 2011-2012 "
+            "press-conference days, 14:15 before). The 60-minute bars the pre-FOMC strategy uses start in 2018.",
             "FX seeds' no_high_impact_news_30m filter is inactive: there is no historical macro calendar before 2026.",
             "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
             "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
