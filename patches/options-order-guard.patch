@@ -1,0 +1,912 @@
+diff --git a/config/accounts.yaml b/config/accounts.yaml
+index 0180459..7a27913 100644
+--- a/config/accounts.yaml
++++ b/config/accounts.yaml
+@@ -19,6 +19,6 @@ accounts:
+     venue: moomoo
+     mode: paper
+     environment: SIMULATE
+-    asset_classes: [stocks]
++    asset_classes: [stocks, options]
+     secret: moomoo_sim_account_id
+     account_id: ""
+diff --git a/config/risk/policy.yaml b/config/risk/policy.yaml
+index 7965519..d6aca14 100644
+--- a/config/risk/policy.yaml
++++ b/config/risk/policy.yaml
+@@ -26,13 +26,15 @@ book:
+   stress_loss_cap_pct: 35.0    # worst named scenario loss
+   # Governor tiers: the book starts at tier 2. Leverage is gross notional / equity per asset
+   # class; 14x forex is 70% of the 20:1 MAS retail cap and is only reachable at tier 5.
++  # Options: gross premium (contracts x premium x multiplier) as a multiple of equity. A cap on
++  # premium outlay, not on underlying notional; naked-call risk is limited by heat and margin.
+   start_tier: 2
+   tiers:
+-    1: {size_multiplier: 0.5, max_leverage: {forex: 2.0, stocks: 1.0}}
+-    2: {size_multiplier: 1.0, max_leverage: {forex: 5.0, stocks: 1.0}}
+-    3: {size_multiplier: 1.0, max_leverage: {forex: 8.0, stocks: 1.5}}
+-    4: {size_multiplier: 1.0, max_leverage: {forex: 11.0, stocks: 2.0}}
+-    5: {size_multiplier: 1.0, max_leverage: {forex: 14.0, stocks: 2.0}}
++    1: {size_multiplier: 0.5, max_leverage: {forex: 2.0, stocks: 1.0, options: 0.15}}
++    2: {size_multiplier: 1.0, max_leverage: {forex: 5.0, stocks: 1.0, options: 0.30}}
++    3: {size_multiplier: 1.0, max_leverage: {forex: 8.0, stocks: 1.5, options: 0.30}}
++    4: {size_multiplier: 1.0, max_leverage: {forex: 11.0, stocks: 2.0, options: 0.30}}
++    5: {size_multiplier: 1.0, max_leverage: {forex: 14.0, stocks: 2.0, options: 0.30}}
+ 
+ hedging:
+   # Hedges are placed by code only, to bring a currency or factor back under its cap or to
+@@ -45,6 +47,20 @@ shorts:
+   max_days_to_cover: 5.0
+   block_when_ssr: true
+ 
++# Options (long calls, long puts, naked short calls). Added by patches/options-order-guard.patch.
++options:
++  multiplier: 100              # shares per US equity option contract: every option USD figure uses it
++  naked_call:
++    enabled: true
++    stop_required: true        # a buy-to-close stop above the credit, always set (gate and order guard both refuse without)
++    gap_pct: 0.20              # sized as if the underlying gaps this far past the stop; code floors it at 0.20
++    exec_cushion_pct: 0.03     # the buy-to-close pays the ask plus slippage: half spread 2% + slippage 1%
++    block_through_earnings: true
++    earnings_buffer_days: 1    # keep this many days clear of a report
++    max_short_interest_pct_float: 20.0
++    max_days_to_cover: 5.0
++    require_known_data: true   # unknown earnings date or short interest blocks the trade
++
+ sanity:
+   max_order_notional_x_equity: 15.0
+   max_price_deviation: 0.05
+diff --git a/tests/test_options_risk.py b/tests/test_options_risk.py
+new file mode 100644
+index 0000000..ee27a2a
+--- /dev/null
++++ b/tests/test_options_risk.py
+@@ -0,0 +1,375 @@
++"""Risk gate and order guard for options: x100 multiplier, naked-call stop, 20% gap sizing.
++
++Added by patches/options-order-guard.patch; the first test class checks the gate, the second the
++guard, the third that the protected copy of the gap formula agrees with tradex.options.sizing.
++"""
++import datetime as dt
++
++import pandas as pd
++import pytest
++
++from tradex.core.interfaces import BrokerPosition, OrderRequest
++from tradex.core.records import TradePlan, Verdict
++from tradex.execution.checks import SanityPolicy, sanity_check
++from tradex.execution.guard import OrderGuard, OrderRefused
++from tradex.risk.exposure import Leg, factor_exposures
++from tradex.risk.gate import BookState, RiskGate
++from tradex.risk.options import (GAP_PCT_FLOOR, OptionInfo, load_options_policy, naked_call_blockers,
++                                 option_unit_risk, parse_option_symbol, premium_after_gap)
++
++T0 = pd.Timestamp("2026-03-02 21:00", tz="UTC")
++CALL = "US.XYZ260417C105000"
++PUT = "US.XYZ260417P095000"
++POL = load_options_policy()
++TODAY, END = dt.date(2026, 3, 3), dt.date(2026, 3, 17)
++
++
++def _plan(symbol=CALL, d=1, entry=2.50, stop=1.25, t1=5.0, p=0.5, did="o1"):
++    rr = abs(t1 - entry) / (abs(entry - stop) or 1e-9)
++    return TradePlan(did, T0.isoformat(), symbol, "options", d, "market", entry, stop, [t1], 15, "", ["trend", "breakout"],
++                     ["a", "b"], 0.5, p, "base_rate", rr, p * rr - (1 - p), 0.0)
++
++
++def _info(right="C", **kw):
++    base = dict(right=right, strike=105.0, underlying="XYZ", underlying_price=100.0, delta=0.4,
++                underlying_at_stop=103.0, iv=0.30, years=30 / 365, today=TODAY, holding_end=END,
++                earnings_known=True, earnings_date=None, short_interest_pct_float=3.0, days_to_cover=1.0)
++    return OptionInfo(**(base | kw))
++
++
++def _naked(**plan_kw):
++    return _plan(d=-1, entry=1.50, stop=3.00, t1=0.15, p=0.6, **plan_kw)
++
++
++GATE = RiskGate.from_policy()
++BOOK = BookState(100_000, [])
++
++
++# --- gate: the x100 multiplier ----------------------------------------------------------------------
++
++def test_policy_has_the_options_section():
++    assert POL["multiplier"] == 100 and POL["naked_call"]["gap_pct"] == 0.20 and POL["naked_call"]["stop_required"]
++    for tier in GATE.policy["book"]["tiers"].values():
++        assert tier["max_leverage"]["options"] > 0
++
++
++def test_long_call_is_sized_on_premium_times_100():
++    v = GATE.review(_plan(), BOOK, 1.0, option=_info())
++    assert v.outcome == "accepted"
++    assert v.risk_usd == pytest.approx(v.qty * 2.50 * 100)               # not 2.50 per contract
++    assert v.checks["options"]["multiplier"] == 100 and v.checks["options"]["structure"] == "long_call"
++    assert v.checks["options"]["unit_risk_usd"] == pytest.approx(250.0)
++    assert v.risk_pct <= GATE.policy["sizing"]["per_trade_cap_pct"] + 1e-9
++    assert v.qty == int(v.qty) and v.qty >= 1
++
++
++def test_long_put_is_sized_the_same_way():
++    v = GATE.review(_plan(PUT), BOOK, 1.0, option=_info("P"))
++    assert v.outcome == "accepted" and v.checks["options"]["structure"] == "long_put"
++    assert v.risk_usd == pytest.approx(v.qty * 250.0)
++
++
++def test_leverage_cap_counts_premium_value_with_the_multiplier():
++    tier = GATE.policy["book"]["tiers"][2]["max_leverage"]["options"]
++    cheap = _plan(entry=0.50, stop=0.25, t1=1.0, p=0.7)
++    v = GATE.review(cheap, BookState(10_000, []), 1.0, option=_info())
++    gross = v.qty * 0.50 * 100
++    assert gross <= 10_000 * tier + 1e-6
++    assert v.checks["leverage"]["cap_x"] == tier
++
++
++def test_options_plan_without_details_or_policy_is_rejected():
++    v = GATE.review(_plan(), BOOK, 1.0)
++    assert v.outcome == "rejected" and "without option details" in v.reasons[-1]
++    off = RiskGate({k: v_ for k, v_ in GATE.policy.items() if k != "options"})
++    assert "not enabled" in off.review(_plan(), BOOK, 1.0, option=_info()).reasons[-1]
++
++
++def test_short_put_is_refused():
++    v = GATE.review(_plan(PUT, d=-1, entry=1.5, stop=3.0, t1=0.5, p=0.6), BOOK, 1.0, option=_info("P"))
++    assert v.outcome == "rejected" and "short puts" in v.reasons[-1]
++
++
++def test_open_option_legs_count_in_heat_with_their_stress_loss():
++    held = [Leg("US.AAA260417C105000", "options", 1, 40, 2.50, 1.25, multiplier=100.0, underlying="AAA",
++                underlying_price=100.0, delta=0.4, right="C", stress_loss_usd=250.0)]
++    free = GATE.review(_plan(), BOOK, 1.0, option=_info())
++    crowded = GATE.review(_plan(), BookState(100_000, held), 1.0, option=_info())
++    assert crowded.checks["heat"]["now_usd"] == pytest.approx(40 * 250.0)
++    assert crowded.qty < free.qty
++
++
++def test_book_with_option_legs_missing_data_blocks_every_trade():
++    stray = [Leg("US.AAA260417C105000", "options", 1, 4, 2.50, 1.25)]       # no multiplier, no underlying price
++    v = GATE.review(_plan(), BookState(100_000, stray), 1.0, option=_info())
++    assert v.outcome == "rejected" and "cannot be measured" in v.reasons[-1]
++
++
++def test_expected_profit_uses_the_plans_own_r_with_the_multiplier():
++    v = GATE.review(_plan(), BOOK, 1.0, fee_fn=lambda q: 0.0, option=_info())
++    r_unit = abs(2.50 - 1.25) * 100
++    assert v.checks["economics"]["expected_profit_usd"] == pytest.approx(_plan().ev_r * v.qty * r_unit, abs=0.01)
++
++
++def test_stock_and_forex_paths_are_unchanged():
++    stock = TradePlan("s", T0.isoformat(), "X", "stocks", 1, "market", 100.0, 99.0, [103.0], 10, "", ["a", "b"], ["a", "b"],
++                      0.5, 0.6, "base_rate", 3.0, 1.2, 0.0)
++    v = GATE.review(stock, BookState(10_000, []), 1.0)
++    assert v.outcome == "accepted" and "options" not in v.checks
++
++
++# --- gate: naked calls -----------------------------------------------------------------------------
++
++def test_naked_call_is_sized_on_the_gap_stressed_loss():
++    v = GATE.review(_naked(), BOOK, 1.0, option=_info())
++    assert v.outcome == "accepted"
++    o = v.checks["options"]
++    assert o["structure"] == "naked_call" and o["gap_pct"] == 0.20 and o["blockers"] == []
++    assert o["unit_risk_usd"] > 20 * o["stop_loss_usd"] / 3                  # far more than the loss at the stop
++    assert v.risk_usd == pytest.approx(v.qty * o["unit_risk_usd"], abs=0.01)
++    assert v.risk_usd <= 100_000 * GATE.policy["sizing"]["per_trade_cap_pct"] / 100 + 1e-6
++    assert o["underlying_after_gap"] == pytest.approx(103.0 * 1.2)
++
++
++def test_naked_call_without_a_stop_is_rejected():
++    for stop in (1.50, 1.0, 0.0):
++        v = GATE.review(_plan(d=-1, entry=1.50, stop=stop, t1=0.15, p=0.6), BOOK, 1.0, option=_info())
++        assert v.outcome == "rejected" and "buy-to-close stop above the credit" in v.reasons[-1], stop
++
++
++def test_naked_call_needs_the_underlying_level_at_the_stop():
++    v = GATE.review(_naked(), BOOK, 1.0, option=_info(underlying_at_stop=None))
++    assert v.outcome == "rejected" and "gap cannot be sized" in v.reasons[-1]
++
++
++def test_gap_floor_is_in_code_not_just_in_config():
++    weak = dict(GATE.policy)
++    weak["options"] = {**POL, "naked_call": {**POL["naked_call"], "gap_pct": 0.02}}
++    v = RiskGate(weak).review(_naked(), BOOK, 1.0, option=_info())
++    assert v.outcome == "accepted" and v.checks["options"]["gap_pct"] == GAP_PCT_FLOOR
++    assert v.risk_usd == pytest.approx(GATE.review(_naked(), BOOK, 1.0, option=_info()).risk_usd, rel=0.2)
++
++
++def test_naked_calls_can_be_switched_off():
++    off = dict(GATE.policy)
++    off["options"] = {**POL, "naked_call": {**POL["naked_call"], "enabled": False}}
++    assert "not enabled" in RiskGate(off).review(_naked(), BOOK, 1.0, option=_info()).reasons[-1]
++
++
++def test_naked_call_blocked_through_earnings_and_on_squeeze_names():
++    near = _info(earnings_date=dt.date(2026, 3, 10))
++    v = GATE.review(_naked(), BOOK, 1.0, option=near)
++    assert v.outcome == "rejected" and "earnings" in v.reasons[-1]
++    assert GATE.review(_naked(), BOOK, 1.0, option=_info(earnings_date=dt.date(2026, 3, 18))).outcome == "rejected"   # buffer day
++    assert GATE.review(_naked(), BOOK, 1.0, option=_info(earnings_date=dt.date(2026, 3, 19))).outcome == "accepted"
++    assert "squeeze" in GATE.review(_naked(), BOOK, 1.0, option=_info(short_interest_pct_float=25.0)).reasons[-1]
++    assert "squeeze" in GATE.review(_naked(), BOOK, 1.0, option=_info(days_to_cover=6.0)).reasons[-1]
++
++
++def test_naked_call_blocked_on_unknown_data():
++    assert GATE.review(_naked(), BOOK, 1.0, option=_info(earnings_known=False)).outcome == "rejected"
++    r = GATE.review(_naked(), BOOK, 1.0, option=_info(short_interest_pct_float=None, days_to_cover=None))
++    assert r.outcome == "rejected" and "unknown_data" in r.reasons[-1]
++    assert GATE.review(_naked(), BOOK, 1.0, option=_info(earnings_date=dt.date(2026, 3, 10), today=None)).outcome == "rejected"
++
++
++def test_a_big_naked_position_in_the_book_shrinks_the_next_one():
++    unit, _, _ = option_unit_risk(1.5, 3.0, -1, _info(), POL)
++    held = [Leg("US.AAA260417C105000", "options", -1, 20, 1.5, 3.0, multiplier=100.0, underlying="AAA",
++                underlying_price=100.0, right="C", stress_loss_usd=unit)]
++    free = GATE.review(_naked(), BOOK, 1.0, option=_info())
++    crowded = GATE.review(_naked(), BookState(100_000, held), 1.0, option=_info())
++    assert crowded.qty < free.qty or crowded.outcome == "rejected"
++
++
++# --- exposure --------------------------------------------------------------------------------------
++
++def test_option_exposure_is_delta_adjusted_share_equivalent():
++    lc = Leg(CALL, "options", 1, 3, 2.5, multiplier=100.0, underlying="XYZ", underlying_price=100.0, delta=0.4, right="C")
++    lp = Leg(PUT, "options", 1, 3, 2.5, multiplier=100.0, underlying="XYZ", underlying_price=100.0, delta=-0.35, right="P")
++    sc = Leg(CALL, "options", -1, 3, 1.5, multiplier=100.0, underlying="XYZ", underlying_price=100.0, delta=0.2, right="C")
++    assert factor_exposures(lc) == {"EQ:XYZ": pytest.approx(3 * 100 * 0.4 * 100.0)}
++    assert factor_exposures(lp) == {"EQ:XYZ": pytest.approx(-3 * 100 * 0.35 * 100.0)}
++    assert factor_exposures(sc) == {"EQ:XYZ": pytest.approx(-3 * 100 * 1.0 * 100.0)}       # short call stressed as short shares
++    missing = Leg(CALL, "options", 1, 3, 2.5, multiplier=100.0, underlying="XYZ", underlying_price=100.0, right="C")
++    assert factor_exposures(missing)["EQ:XYZ"] == pytest.approx(3 * 100 * 100.0)
++    with pytest.raises(ValueError):
++        factor_exposures(Leg(CALL, "options", 1, 3, 2.5, multiplier=100.0))
++
++
++def test_sanity_check_notional_includes_the_multiplier():
++    pol = SanityPolicy(max_order_notional_x_equity=15.0)
++    # 40 contracts at 5.00 = 20,000 notional (not 200): above 15x of a 1,000 account
++    assert sanity_check(40, 5.0, 1.0, 1_000.0, None, pol, multiplier=100.0) is not None
++    assert sanity_check(40, 5.0, 1.0, 1_000.0, None, pol) is None
++
++
++def test_parse_option_symbol():
++    s = parse_option_symbol(CALL)
++    assert (s.underlying, s.expiry, s.right, s.strike) == ("XYZ", dt.date(2026, 4, 17), "C", 105.0)
++    assert parse_option_symbol("US.XYZ") is None and parse_option_symbol("EUR_USD") is None
++
++
++# --- order guard -----------------------------------------------------------------------------------
++
++def _sized(plan, info):
++    v = GATE.review(plan, BOOK, 1.0, option=info)
++    assert v.outcome == "accepted", v.reasons
++    v.verdict_id = f"{plan.decision_id}-v"
++    return v
++
++
++def _guard(v, accounts=("acct-1",), pol=None):
++    return OrderGuard(lambda did, vid: v if vid == v.verdict_id else None, accounts, pol)
++
++
++def _order(v, symbol=CALL, side=1, qty=None, stop=None, **kw):
++    return OrderRequest("o1-entry", "o1", symbol, "options", side, qty if qty is not None else v.qty,
++                        stop_loss=stop, verdict_id=v.verdict_id, **kw)
++
++
++def test_guard_passes_long_options_sized_by_the_gate():
++    v = _sized(_plan(), _info())
++    _guard(v).check(_order(v), "acct-1", [])
++    vp = _sized(_plan(PUT), _info("P"))
++    _guard(vp).check(_order(vp, PUT), "acct-1", [])
++
++
++def test_guard_passes_a_naked_call_with_its_stop():
++    v = _sized(_naked(), _info())
++    _guard(v).check(_order(v, side=-1, stop=3.0), "acct-1", [])
++    _guard(v).check(_order(v, side=-1, stop=2.4), "acct-1", [])             # tighter than sized is fine
++
++
++def test_guard_refuses_a_naked_call_without_a_stop():
++    v = _sized(_naked(), _info())
++    for stop in (None, 0.0):
++        with pytest.raises(OrderRefused, match="without a buy-to-close stop"):
++            _guard(v).check(_order(v, side=-1, stop=stop), "acct-1", [])
++    with pytest.raises(OrderRefused, match="not above the credit"):
++        _guard(v).check(_order(v, side=-1, stop=1.5), "acct-1", [])
++    with pytest.raises(OrderRefused, match="looser than"):
++        _guard(v).check(_order(v, side=-1, stop=3.5), "acct-1", [])
++
++
++def test_guard_refuses_short_puts_and_non_option_symbols():
++    v = _sized(_plan(PUT), _info("P"))
++    with pytest.raises(OrderRefused, match="short puts"):
++        _guard(v).check(_order(v, PUT, side=-1, stop=3.0), "acct-1", [])
++    with pytest.raises(OrderRefused, match="not an option contract code"):
++        _guard(v).check(_order(v, "EUR_USD"), "acct-1", [])
++
++
++def test_guard_refuses_verdicts_not_sized_for_options():
++    stock_like = Verdict("o1", T0.isoformat(), "accepted", 5, 50, 0.5, [], {}, verdict_id="o1-v")
++    with pytest.raises(OrderRefused, match="no options sizing"):
++        _guard(stock_like).check(_order(stock_like, qty=5), "acct-1", [])
++    wrong_mult = Verdict("o1", T0.isoformat(), "accepted", 5, 50, 0.5, [], {"options": {"multiplier": 1, "right": "C"}},
++                         verdict_id="o1-v")
++    with pytest.raises(OrderRefused, match="x100 contract multiplier"):
++        _guard(wrong_mult).check(_order(wrong_mult, qty=5), "acct-1", [])
++    v = _sized(_plan(), _info())
++    with pytest.raises(OrderRefused, match="sized for a C"):
++        _guard(v).check(_order(v, PUT), "acct-1", [])
++
++
++def test_guard_refuses_fractional_contracts_and_over_size():
++    v = _sized(_plan(), _info())
++    with pytest.raises(OrderRefused, match="whole number"):
++        _guard(v).check(_order(v, qty=v.qty - 0.5), "acct-1", [])
++    with pytest.raises(OrderRefused, match="exceeds verdict size"):
++        _guard(v).check(_order(v, qty=v.qty + 1), "acct-1", [])
++
++
++def test_guard_refuses_a_naked_call_whose_verdict_lacks_the_gap_stress_or_has_blockers():
++    v = _sized(_naked(), _info())
++    v.checks["options"]["gap_pct"] = 0.05
++    with pytest.raises(OrderRefused, match="required gap"):
++        _guard(v).check(_order(v, side=-1, stop=3.0), "acct-1", [])
++    v = _sized(_naked(), _info())
++    v.checks["options"]["blockers"] = ["earnings: report inside the window"]
++    with pytest.raises(OrderRefused, match="blocked"):
++        _guard(v).check(_order(v, side=-1, stop=3.0), "acct-1", [])
++
++
++def test_guard_refuses_options_when_the_policy_has_no_options_section(monkeypatch):
++    import tradex.execution.guard as guard_mod
++    v = _sized(_plan(), _info())
++    monkeypatch.setattr(guard_mod, "load_options_policy", lambda: None)
++    with pytest.raises(OrderRefused, match="not enabled"):
++        OrderGuard(lambda did, vid: v, ("acct-1",)).check(_order(v), "acct-1", [])
++
++
++def test_guard_still_enforces_the_account_rules_for_options():
++    v = _sized(_plan(), _info())
++    with pytest.raises(OrderRefused, match="not listed as agent-owned"):
++        _guard(v).check(_order(v), "acct-9", [])
++    with pytest.raises(OrderRefused, match="Ray's own account"):
++        _guard(v).check(_order(v, account="ray"), "acct-1", [])
++    with pytest.raises(OrderRefused, match="no risk-gate verdict"):
++        _guard(v).check(OrderRequest("x", "o1", CALL, "options", 1, 1), "acct-1", [])
++
++
++def test_exits_close_option_positions_without_a_verdict():
++    pos = [BrokerPosition("o1", CALL, "options", -1, 3, 1.5, T0, 3.0, None)]
++    ok = OrderRequest("o1-x", "o1", CALL, "options", 1, 3, purpose="exit")
++    OrderGuard(lambda *_: None, ("acct-1",)).check(ok, "acct-1", pos)               # buy to close a short call
++    for bad in (OrderRequest("o1-x", "o1", CALL, "options", 1, 4, purpose="exit"),
++                OrderRequest("o1-x", "o1", CALL, "options", -1, 3, purpose="exit")):
++        with pytest.raises(OrderRefused):
++            OrderGuard(lambda *_: None, ("acct-1",)).check(bad, "acct-1", pos)
++
++
++def test_accounts_file_lists_options_for_the_moomoo_simulate_account():
++    from tradex.execution.accounts import load_accounts
++    mm = [a for a in load_accounts(resolve=lambda n: None) if a.venue == "moomoo"][0]
++    assert "options" in mm.asset_classes and mm.mode == "paper" and mm.environment == "SIMULATE"
++
++
++# --- the protected gap formula agrees with the unprotected sizing module -------------------------------
++
++@pytest.mark.parametrize("strike,credit,stop,s_stop,iv,years", [
++    (105, 1.5, 3.0, 103.0, 0.30, 30 / 365), (105, 1.5, 3.0, 103.0, None, None), (50, 0.4, 0.8, 48.0, 0.6, 0.1),
++    (200, 3.0, 6.0, 198.0, 0.25, 45 / 365), (100, 2.0, 4.0, 101.0, 0.35, 0.08)])
++def test_gate_unit_risk_matches_options_sizing(strike, credit, stop, s_stop, iv, years):
++    sizing = pytest.importorskip("tradex.options.sizing")
++    info = OptionInfo("C", float(strike), "XYZ", 100.0, underlying_at_stop=s_stop, iv=iv, years=years)
++    unit, detail, why = option_unit_risk(credit, stop, -1, info, POL)
++    assert why is None
++    vol = sizing.GapVol(iv, years) if iv else None
++    gl = sizing.naked_call_gap_loss(strike, credit, stop, s_stop, 1, 0.20, None, 100, vol)
++    assert unit == pytest.approx(gl.gap_loss_usd, rel=1e-9)
++    assert detail["premium_after_gap"] == pytest.approx(gl.premium_after_gap, rel=1e-9)
++    s_gap, p_gap = premium_after_gap(strike, stop, s_stop, 0.20, iv, years)
++    assert (s_gap, p_gap) == pytest.approx((gl.underlying_after_gap, gl.premium_after_gap))
++
++
++def test_gate_blockers_match_options_rules():
++    rules = pytest.importorskip("tradex.options.rules")
++    from tradex.execution.checks import ShortInfo
++    from tradex.options.providers import EarningsInfo
++    asof = pd.Timestamp("2026-03-03 15:00", tz="UTC")
++    n = POL["naked_call"]
++    cases = [(dt.date(2026, 3, 10), ShortInfo(short_interest_pct_float=3, days_to_cover=1)),
++             (dt.date(2026, 3, 18), ShortInfo(short_interest_pct_float=3, days_to_cover=1)),
++             (dt.date(2026, 3, 19), ShortInfo(short_interest_pct_float=3, days_to_cover=1)),
++             (None, ShortInfo(short_interest_pct_float=25, days_to_cover=1)),
++             (None, ShortInfo(short_interest_pct_float=3, days_to_cover=6)),
++             (None, ShortInfo()), (None, None)]
++
++    class Risk:
++        def __init__(self, e, s):
++            self.e, self.s = e, s
++
++        def next_earnings(self, u, a):
++            return EarningsInfo(self.e)
++
++        def short_info(self, u, a):
++            return self.s
++    pol = rules.NakedCallPolicy.from_policy()
++    for e, si in cases:
++        mine = naked_call_blockers(_info(earnings_date=e, short_interest_pct_float=getattr(si, "short_interest_pct_float", None),
++                                         days_to_cover=getattr(si, "days_to_cover", None)), n)
++        theirs = rules.naked_call_blockers(pol, "XYZ", asof, END, Risk(e, si))
++        assert bool(mine) == bool(theirs), (e, si, mine, theirs)
++        assert rules.blocker_kind(mine) == rules.blocker_kind(theirs)
+diff --git a/tradex/execution/checks.py b/tradex/execution/checks.py
+index a918c25..83e2852 100644
+--- a/tradex/execution/checks.py
++++ b/tradex/execution/checks.py
+@@ -59,10 +59,11 @@ class SanityPolicy:
+ 
+ 
+ def sanity_check(qty: float, price: float, base_to_usd: float, equity: float, last_price: float | None,
+-                 pol: SanityPolicy) -> str | None:
++                 pol: SanityPolicy, multiplier: float = 1.0) -> str | None:
++    """``multiplier`` is shares per contract for options (100), so notional = contracts x premium x 100."""
+     if qty <= 0 or price <= 0:
+         return "non-positive quantity or price"
+-    notional = qty * price * base_to_usd
++    notional = qty * price * base_to_usd * multiplier
+     if equity > 0 and notional > pol.max_order_notional_x_equity * equity:
+         return f"order notional {notional:,.0f} USD exceeds {pol.max_order_notional_x_equity:g}x equity"
+     if last_price and abs(price / last_price - 1) > pol.max_price_deviation:
+diff --git a/tradex/execution/guard.py b/tradex/execution/guard.py
+index f9d5e3b..c294be5 100644
+--- a/tradex/execution/guard.py
++++ b/tradex/execution/guard.py
+@@ -8,7 +8,11 @@ only way in, and ``GuardedBroker`` wraps anything else). An order is refused unl
+ - an entry or hedge cites a risk-gate verdict ID that exists, was accepted, belongs to the
+   same decision, and its quantity is no larger than the verdict's size;
+ - an exit only reduces an open agent position of the same decision (exits close risk, so
+-  they need no verdict: a flatten must never be blocked by a missing one).
++  they need no verdict: a flatten must never be blocked by a missing one);
++- an options entry is a long call, a long put or a naked short call, and nothing else. A short
++  call needs a buy-to-close stop above its credit on the order, the verdict must carry the
++  options sizing (x100 multiplier, 20% gap stress) the options-aware risk gate writes, and the
++  order's stop may not be looser than the stop the verdict was sized for.
+ 
+ Refusals raise ``OrderRefused``; nothing reaches the venue.
+ """
+@@ -20,6 +24,7 @@ from typing import Any, Callable, Iterable
+ import pandas as pd
+ 
+ from tradex.core.interfaces import AccountInfo, Broker, BrokerFill, BrokerPosition, OrderRequest, OrderStatus
++from tradex.risk.options import GAP_PCT_FLOOR, load_options_policy, parse_option_symbol
+ 
+ QTY_TOL = 1e-9
+ 
+@@ -45,9 +50,11 @@ def _get(v: Any, k: str):
+ 
+ 
+ class OrderGuard:
+-    def __init__(self, verdicts: VerdictLookup, agent_accounts: Iterable[str]):
++    def __init__(self, verdicts: VerdictLookup, agent_accounts: Iterable[str],
++                 options_policy: dict | None = None):
+         self.verdicts = verdicts
+         self.agent_accounts = {a for a in agent_accounts if a}
++        self._options_policy = options_policy      # None: read config/risk/policy.yaml on first options order
+ 
+     def check(self, req: OrderRequest, account_id: str, positions: list[BrokerPosition]) -> None:
+         if req.account != "agent":
+@@ -74,6 +81,47 @@ class OrderGuard:
+             raise OrderRefused(f"{req.client_order_id}: verdict {req.verdict_id} was not accepted")
+         if req.qty > float(_get(v, "qty") or 0.0) + QTY_TOL:
+             raise OrderRefused(f"{req.client_order_id}: qty {req.qty} exceeds verdict size {_get(v, 'qty')}")
++        if req.asset_class == "options":
++            self._check_option_entry(req, v)
++
++    def _check_option_entry(self, req: OrderRequest, v: Any) -> None:
++        coid = req.client_order_id
++        pol = self._options_policy if self._options_policy is not None else load_options_policy()
++        if not pol:
++            raise OrderRefused(f"{coid}: options are not enabled in config/risk/policy.yaml")
++        sym = parse_option_symbol(req.symbol)
++        if sym is None:
++            raise OrderRefused(f"{coid}: {req.symbol!r} is not an option contract code")
++        if int(req.qty) != req.qty:
++            raise OrderRefused(f"{coid}: option quantity must be a whole number of contracts")
++        naked = req.side < 0
++        if naked and sym.right != "C":
++            raise OrderRefused(f"{coid}: short puts are not permitted; only long calls, long puts and naked calls")
++        opt = (_get(v, "checks") or {}).get("options")
++        if not opt:
++            raise OrderRefused(f"{coid}: verdict has no options sizing (not written by the options-aware risk gate)")
++        if float(opt.get("multiplier") or 0.0) != float(pol["multiplier"]):
++            raise OrderRefused(f"{coid}: verdict was not sized with the x{pol['multiplier']} contract multiplier")
++        if opt.get("right") != sym.right:
++            raise OrderRefused(f"{coid}: order is for a {sym.right} but the verdict was sized for a {opt.get('right')}")
++        if not naked:
++            return
++        n = pol.get("naked_call") or {}
++        if not n.get("enabled", False):
++            raise OrderRefused(f"{coid}: naked calls are not enabled in config/risk/policy.yaml")
++        if req.stop_loss is None or req.stop_loss <= 0:
++            raise OrderRefused(f"{coid}: naked call without a buy-to-close stop")
++        entry, sized_stop = opt.get("entry_premium"), opt.get("stop_premium")
++        if not entry or not sized_stop:
++            raise OrderRefused(f"{coid}: verdict carries no entry premium and stop for the naked call")
++        if req.stop_loss <= entry:
++            raise OrderRefused(f"{coid}: buy-to-close stop {req.stop_loss} is not above the credit {entry}")
++        if req.stop_loss > float(sized_stop) + 1e-9:
++            raise OrderRefused(f"{coid}: stop {req.stop_loss} is looser than the {sized_stop} the verdict was sized for")
++        if float(opt.get("gap_pct") or 0.0) < max(float(n.get("gap_pct", GAP_PCT_FLOOR)), GAP_PCT_FLOOR) - 1e-12:
++            raise OrderRefused(f"{coid}: verdict was not stressed by the required gap past the stop")
++        if opt.get("blockers"):
++            raise OrderRefused(f"{coid}: naked call blocked: {'; '.join(opt['blockers'])}")
+ 
+ 
+ class VenueAdapter(ABC):
+diff --git a/tradex/risk/exposure.py b/tradex/risk/exposure.py
+index e5e36cc..860aace 100644
+--- a/tradex/risk/exposure.py
++++ b/tradex/risk/exposure.py
+@@ -39,9 +39,16 @@ class Leg:
+     asset_class: str
+     direction: int
+     qty: float
+-    price: float                      # in quote currency
++    price: float                      # in quote currency (options: premium per share)
+     stop: float | None = None
+     account: str = "agent"
++    # Options (asset_class "options"): qty is contracts, price the premium per share.
++    multiplier: float = 1.0           # shares per contract (100 for US equity options)
++    underlying: str | None = None     # the stock the contract is on
++    underlying_price: float | None = None
++    delta: float | None = None        # contract delta; None is treated as +-1 (full share exposure)
++    right: str | None = None          # "C" or "P"
++    stress_loss_usd: float | None = None   # USD lost per unit of qty in the gap-stress case; replaces loss-to-stop in heat
+ 
+ 
+ def factor_exposures(leg: Leg, fx: dict[str, pd.Series] | None = None, ts: pd.Timestamp | None = None
+@@ -49,6 +56,8 @@ def factor_exposures(leg: Leg, fx: dict[str, pd.Series] | None = None, ts: pd.Ti
+     """USD exposure of one position to each risk factor (positive = gains when the factor rises)."""
+     if leg.asset_class == "stocks":
+         return {f"EQ:{leg.symbol}": leg.direction * leg.qty * leg.price}
++    if leg.asset_class == "options":
++        return _option_exposure(leg)
+     base, quote = split_pair(leg.symbol)
+     out: dict[str, float] = {}
+     base_usd = leg.qty * usd_per_unit(base, ts, fx)
+@@ -60,6 +69,23 @@ def factor_exposures(leg: Leg, fx: dict[str, pd.Series] | None = None, ts: pd.Ti
+     return out
+ 
+ 
++def _option_exposure(leg: Leg) -> dict[str, float]:
++    """Share-equivalent USD exposure of an option leg to its underlying's equity factor.
++
++    ``direction x contracts x multiplier x delta x underlying price``. A short call is stressed as
++    short shares (delta forced to 1): its loss on a gap is unbounded, not delta-sized. A missing
++    delta counts as a full +-1 share exposure, the safe side for both longs and shorts.
++    """
++    if leg.underlying_price is None or leg.underlying_price <= 0:
++        raise ValueError(f"option leg {leg.symbol} has no underlying price")
++    sign = -1.0 if leg.right == "P" else 1.0
++    if leg.direction < 0 and leg.right != "P":
++        delta = 1.0
++    else:
++        delta = leg.delta if leg.delta is not None else sign
++    return {f"EQ:{leg.underlying or leg.symbol}": leg.direction * leg.qty * leg.multiplier * delta * leg.underlying_price}
++
++
+ def book_exposures(legs: list[Leg], fx=None, ts=None) -> dict[str, float]:
+     tot: dict[str, float] = {}
+     for leg in legs:
+diff --git a/tradex/risk/gate.py b/tradex/risk/gate.py
+index b5c0e5b..09558b5 100644
+--- a/tradex/risk/gate.py
++++ b/tradex/risk/gate.py
+@@ -19,6 +19,11 @@ Then the size shrinks until every book limit holds:
+ - position count, and a minimum economic size (fees under 10% of expected profit)
+ - free margin at the venue the trade goes to, when the caller supplies it
+ 
++Options (asset class "options", quantity in contracts, prices per share): every USD figure
++carries the x100 multiplier; a long is sized on its whole premium; a naked short call must have a
++buy-to-close stop above its credit and is sized on a loss stressed by a 20% gap past that stop,
++and is refused near earnings or on heavily shorted names (see tradex/risk/options.py).
++
+ Protected path: agents cannot change tradex/risk/ or config/risk/.
+ """
+ from __future__ import annotations
+@@ -34,6 +39,7 @@ from tradex.core.records import TradePlan, Verdict
+ from tradex.costs.models import split_pair, usd_per_unit
+ from tradex.risk.exposure import (ESModel, Leg, Scenario, book_exposures, factor_exposures,
+                                   scenarios_from_config, stop_risk_by_currency, worst_stress)
++from tradex.risk.options import OptionInfo, naked_call_blockers, option_unit_risk
+ from tradex.risk.sizing import kelly_fraction
+ 
+ DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "config" / "risk" / "policy.yaml"
+@@ -66,8 +72,10 @@ class RiskGate:
+ 
+     def review(self, plan: TradePlan, book: BookState, base_to_usd: float,
+                fee_fn: Callable[[float], float] | None = None, size_factor: float = 1.0,
+-               promoted: bool = False, lot: float = 1.0) -> Verdict:
+-        """Size ``plan`` against ``book``. ``fee_fn(qty)`` returns round-trip fees in USD."""
++               promoted: bool = False, lot: float = 1.0, option: OptionInfo | None = None) -> Verdict:
++        """Size ``plan`` against ``book``. ``fee_fn(qty)`` returns round-trip fees in USD.
++
++        ``option`` is required for an options plan (and an options plan without it is rejected)."""
+         sz, bk = self.policy["sizing"], self.policy["book"]
+         tier = bk["tiers"][book.tier]
+         checks: dict[str, Any] = {}
+@@ -79,7 +87,34 @@ class RiskGate:
+ 
+         if eq <= 0:
+             return reject("no equity")
+-        unit_risk = plan.risk_per_unit * base_to_usd
++        mult, cand_kw = 1.0, {}
++        bad_legs = [l.symbol for l in book.legs if l.asset_class == "options"
++                    and (l.underlying_price is None or l.multiplier <= 1.0)]
++        if bad_legs:
++            return reject(f"book holds option legs without multiplier or underlying data ({bad_legs[0]}): "
++                          "their risk cannot be measured")
++        if plan.asset_class == "options":
++            opol = self.policy.get("options")
++            if not opol:
++                return reject("options are not enabled in the risk policy")
++            if option is None:
++                return reject("options plan without option details")
++            mult = float(opol["multiplier"])
++            unit_risk, detail, why = option_unit_risk(plan.entry_price, plan.stop, plan.direction, option, opol)
++            checks["options"] = detail
++            if why:
++                return reject(why)
++            if plan.direction < 0:
++                blockers = naked_call_blockers(option, opol.get("naked_call") or {})
++                detail["blockers"] = blockers
++                if blockers:
++                    return reject("naked call blocked: " + "; ".join(blockers))
++            cand_kw = dict(multiplier=mult, underlying=option.underlying, underlying_price=option.underlying_price,
++                           delta=option.delta, right=option.right, stress_loss_usd=unit_risk)
++            r_unit = plan.risk_per_unit * base_to_usd * mult or unit_risk       # 1R: the plan's own stop distance
++        else:
++            unit_risk = plan.risk_per_unit * base_to_usd
++            r_unit = unit_risk
+         if unit_risk <= 0:
+             return reject("plan has no distance to its stop")
+ 
+@@ -97,9 +132,9 @@ class RiskGate:
+ 
+         # 2. shrink until every book limit holds
+         mine = [l for l in book.legs if l.account == "agent"]
+-        cand = lambda q: Leg(plan.symbol, plan.asset_class, plan.direction, q, plan.entry_price, plan.stop)  # noqa: E731
++        cand = lambda q: Leg(plan.symbol, plan.asset_class, plan.direction, q, plan.entry_price, plan.stop, **cand_kw)  # noqa: E731
+ 
+-        heat_now = sum(max(0.0, l.direction * (l.price - l.stop)) * l.qty * _bu(l, book) for l in mine if l.stop is not None)
++        heat_now = sum(_loss_to_stop(l, book) for l in mine)
+         heat_room = eq * bk["heat_cap_pct"] / 100.0 - heat_now
+         q_heat = max(0.0, heat_room / unit_risk)
+         checks["heat"] = {"now_usd": round(heat_now, 2), "cap_usd": round(eq * bk["heat_cap_pct"] / 100, 2),
+@@ -117,9 +152,11 @@ class RiskGate:
+                 q_ccy = min(q_ccy, max(0.0, room / r1) if r1 > 0 else math.inf)
+             checks["currency"] = per
+ 
+-        lev_cap = tier["max_leverage"][plan.asset_class]
+-        gross_ac = sum(l.qty * l.price * _bu(l, book) for l in mine if l.asset_class == plan.asset_class)
+-        unit_notional = plan.entry_price * base_to_usd
++        lev_cap = tier["max_leverage"].get(plan.asset_class)
++        if lev_cap is None:
++            return reject(f"no leverage cap for {plan.asset_class} in the governor tier")
++        gross_ac = sum(l.qty * l.price * l.multiplier * _bu(l, book) for l in mine if l.asset_class == plan.asset_class)
++        unit_notional = plan.entry_price * base_to_usd * mult
+         q_lev = max(0.0, (eq * lev_cap - gross_ac) / unit_notional)
+         checks["leverage"] = {"asset_class": plan.asset_class, "gross_usd": round(gross_ac, 2),
+                               "cap_x": lev_cap, "max_qty": q_lev}
+@@ -171,7 +208,7 @@ class RiskGate:
+ 
+         # 3. minimum economic size
+         risk_usd = qty * unit_risk
+-        exp_profit = plan.ev_r * risk_usd
++        exp_profit = plan.ev_r * qty * r_unit
+         fees = fee_fn(qty) if fee_fn else 0.0
+         checks["economics"] = {"fees_usd": round(fees, 2), "expected_profit_usd": round(exp_profit, 2),
+                                "max_fee_share": sz["min_fee_share_of_edge"]}
+@@ -184,6 +221,16 @@ class RiskGate:
+                        round(100.0 * risk_usd / eq, 4), reasons, checks)
+ 
+ 
++def _loss_to_stop(leg: Leg, book: BookState) -> float:
++    """USD lost if ``leg`` is stopped out. Option legs carry their own stress figure (premium at
++    risk, or the gap-stressed loss of a naked call) and the contract multiplier."""
++    if leg.stress_loss_usd is not None:
++        return leg.stress_loss_usd * leg.qty
++    if leg.stop is None:
++        return 0.0
++    return max(0.0, leg.direction * (leg.price - leg.stop)) * leg.qty * leg.multiplier * _bu(leg, book)
++
++
+ def _bu(leg: Leg, book: BookState) -> float:
+     if leg.asset_class != "forex":
+         return 1.0
+diff --git a/tradex/risk/options.py b/tradex/risk/options.py
+new file mode 100644
+index 0000000..589919b
+--- /dev/null
++++ b/tradex/risk/options.py
+@@ -0,0 +1,182 @@
++"""Option rules for the risk gate and the order guard (protected path).
++
++Three things the stock-shaped gate got wrong for options, all fixed here (Ray, 4 Oct 2026):
++
++1. **The x100 multiplier.** One US equity option contract covers 100 shares. Quantity is in
++   contracts and prices are per share, so every USD figure (risk per unit, notional, heat,
++   leverage) is price x multiplier x quantity. The multiplier comes from ``options.multiplier``
++   in config/risk/policy.yaml.
++2. **A naked short call has no ceiling.** It is sized on a gap-stressed loss: the buy-to-close
++   stop triggers and then the underlying gaps a further ``gap_pct`` (20%, floored in code) past
++   the stop level before the order fills. ``premium_after_gap`` is the same formula as
++   ``tradex.options.sizing.premium_after_gap``; the two are checked against each other in
++   tests/test_options_risk.py.
++3. **A naked call always has a stop, and is kept off earnings and heavily shorted names.** Both
++   the gate and the order guard refuse a short call without a buy-to-close stop above the credit.
++
++This module deliberately imports nothing from ``tradex.options`` (that package is not protected,
++so a gate that depended on it would be only as safe as its least-reviewed file).
++"""
++from __future__ import annotations
++
++import datetime as dt
++import math
++import re
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Any
++
++import yaml
++
++DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "config" / "risk" / "policy.yaml"
++GAP_PCT_FLOOR = 0.20                  # not configurable downwards: lowering it takes a code change
++_SYMBOL = re.compile(r"^(?:US\.)?(?P<root>[A-Z][A-Z0-9.]{0,5}?)(?P<d>\d{6})(?P<right>[CP])(?P<k>\d+)$")
++
++
++def load_options_policy(path: str | Path | None = None) -> dict[str, Any] | None:
++    """``options`` section of the risk policy, or None when options are not enabled."""
++    doc = yaml.safe_load(Path(path or DEFAULT_POLICY).read_text()) or {}
++    return doc.get("options") or None
++
++
++@dataclass(frozen=True)
++class OptionSymbol:
++    underlying: str
++    expiry: dt.date
++    right: str                        # "C" or "P"
++    strike: float
++
++
++def parse_option_symbol(symbol: str) -> OptionSymbol | None:
++    """Parse a moomoo option code (``US.AAPL261016C150000``); None when ``symbol`` is not one."""
++    m = _SYMBOL.match(symbol.strip().upper())
++    if not m:
++        return None
++    d = m["d"]
++    try:
++        expiry = dt.date(2000 + int(d[:2]), int(d[2:4]), int(d[4:6]))
++    except ValueError:
++        return None
++    return OptionSymbol(m["root"], expiry, m["right"], int(m["k"]) / 1000.0)
++
++
++@dataclass(frozen=True)
++class OptionInfo:
++    """What the gate needs to know about the option behind a plan (the planner fills it in)."""
++    right: str                        # "C" or "P"
++    strike: float
++    underlying: str
++    underlying_price: float
++    delta: float | None = None
++    # naked calls
++    underlying_at_stop: float | None = None     # underlying level at which the buy-to-close stop triggers
++    iv: float | None = None                     # implied vol as a fraction, for repricing after the gap
++    years: float | None = None                  # years to expiry
++    rate: float = 0.0
++    div_yield: float = 0.0
++    today: dt.date | None = None
++    holding_end: dt.date | None = None          # last date the position may still be open
++    earnings_known: bool = False                # the calendar answered (even if "no report scheduled")
++    earnings_date: dt.date | None = None
++    short_interest_pct_float: float | None = None
++    days_to_cover: float | None = None
++
++
++# --- pricing (call only; copied, not imported) ----------------------------------------------------
++
++def _ncdf(x: float) -> float:
++    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
++
++
++def call_price(spot: float, strike: float, years: float, iv: float, rate: float = 0.0, q: float = 0.0) -> float:
++    if years <= 1e-9 or iv <= 0:
++        return max(spot * math.exp(-q * max(years, 0.0)) - strike * math.exp(-rate * max(years, 0.0)), 0.0)
++    s = iv * math.sqrt(years)
++    d1 = (math.log(spot / strike) + (rate - q + 0.5 * iv * iv) * years) / s
++    return spot * math.exp(-q * years) * _ncdf(d1) - strike * math.exp(-rate * years) * _ncdf(d1 - s)
++
++
++def premium_after_gap(strike: float, stop_premium: float, underlying_at_stop: float, gap_pct: float,
++                      iv: float | None = None, years: float | None = None, rate: float = 0.0,
++                      div_yield: float = 0.0) -> tuple[float, float]:
++    """(underlying after the gap, call premium after the gap), conservative.
++
++    With volatility inputs: the larger of the Black-Scholes price at the gapped level and
++    intrinsic value plus the time value the call still had at the stop. Without: the hard bound
++    ``stop_premium + (S_gap - S_stop)`` (a call gains at most US$1 per US$1 of underlying).
++    """
++    s_gap = underlying_at_stop * (1.0 + gap_pct)
++    if not iv or not years or iv <= 0 or years <= 0:
++        return s_gap, stop_premium + (s_gap - underlying_at_stop)
++    extrinsic = max(stop_premium - max(underlying_at_stop - strike, 0.0), 0.0)
++    floor = max(s_gap - strike, 0.0) + extrinsic
++    return s_gap, max(call_price(s_gap, strike, years, iv, rate, div_yield), floor)
++
++
++# --- sizing ---------------------------------------------------------------------------------
++
++def option_unit_risk(entry: float, stop: float | None, direction: int, info: OptionInfo, pol: dict[str, Any]
++                     ) -> tuple[float | None, dict[str, Any], str | None]:
++    """(USD risk per contract before fees, details for the verdict, refusal reason or None).
++
++    Long call / long put: the whole premium, ``entry x multiplier`` (options gap through stops).
++    Naked short call: the gap-stressed loss. Short puts are refused.
++    """
++    mult = float(pol["multiplier"])
++    detail: dict[str, Any] = {"multiplier": mult, "right": info.right, "entry_premium": entry,
++                              "stop_premium": stop, "underlying": info.underlying}
++    if entry <= 0:
++        return None, detail, "option premium must be positive"
++    if direction > 0:
++        detail["structure"] = "long_call" if info.right == "C" else "long_put"
++        detail["unit_risk_usd"] = entry * mult
++        return entry * mult, detail, None
++    if info.right != "C":
++        return None, detail, "short puts are not permitted"
++    n = pol.get("naked_call") or {}
++    detail["structure"] = "naked_call"
++    if not n.get("enabled", False):
++        return None, detail, "naked calls are not enabled in the risk policy"
++    if stop is None or stop <= entry:
++        return None, detail, "naked call needs a buy-to-close stop above the credit received"
++    if info.underlying_at_stop is None or info.underlying_at_stop <= 0:
++        return None, detail, "naked call: underlying level at the stop unknown, the gap cannot be sized"
++    gap = max(float(n.get("gap_pct", GAP_PCT_FLOOR)), GAP_PCT_FLOOR)
++    s_gap, p_gap = premium_after_gap(info.strike, stop, info.underlying_at_stop, gap, info.iv, info.years,
++                                     info.rate, info.div_yield)
++    fill = p_gap * (1.0 + float(n.get("exec_cushion_pct", 0.0)))
++    unit = (fill - entry) * mult
++    detail.update(gap_pct=gap, underlying_at_stop=info.underlying_at_stop, underlying_after_gap=s_gap,
++                  premium_after_gap=p_gap, fill_after_gap=fill, unit_risk_usd=unit,
++                  stop_loss_usd=(stop - entry) * mult)
++    return unit, detail, None
++
++
++def naked_call_blockers(info: OptionInfo, n: dict[str, Any]) -> list[str]:
++    """Reasons a naked call may not be opened: earnings in the holding window, squeeze risk, unknown data.
++
++    Each reason starts with its category (``earnings:``, ``squeeze:``, ``unknown_data:``).
++    """
++    out: list[str] = []
++    known_required = bool(n.get("require_known_data", True))
++    if n.get("block_through_earnings", True):
++        if not info.earnings_known:
++            if known_required:
++                out.append("unknown_data: earnings calendar has no answer")
++        elif info.earnings_date is not None:
++            if info.today is None or info.holding_end is None:
++                out.append("unknown_data: holding window not supplied, earnings overlap cannot be checked")
++            else:
++                limit = info.holding_end + dt.timedelta(days=int(n.get("earnings_buffer_days", 1)))
++                if info.today <= info.earnings_date <= limit:
++                    out.append(f"earnings: report on {info.earnings_date} falls inside the holding window")
++    si, dtc = info.short_interest_pct_float, info.days_to_cover
++    if si is None and dtc is None:
++        if known_required:
++            out.append("unknown_data: short-interest data unknown")
++    else:
++        if si is not None and si > float(n.get("max_short_interest_pct_float", 20.0)):
++            out.append(f"squeeze: short interest {si:.0f}% of float")
++        if dtc is not None and dtc > float(n.get("max_days_to_cover", 5.0)):
++            out.append(f"squeeze: {dtc:.1f} days to cover")
++    return out

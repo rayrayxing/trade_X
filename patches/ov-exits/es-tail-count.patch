@@ -1,0 +1,37 @@
+diff --git a/tests/test_es_tail_count.py b/tests/test_es_tail_count.py
+new file mode 100644
+index 0000000..5535b1c
+--- /dev/null
++++ b/tests/test_es_tail_count.py
+@@ -0,0 +1,18 @@
++"""ESModel counts its 2.5% tail without floating-point drift (patches/ov-exits/es-tail-count.patch).
++
++600 * (1 - 0.975) is 15.000000000000013 in floating point, so ceil() gave 16 worst days instead of 15 and the
++expected shortfall came out slightly too small whenever the history length makes the tail an exact whole number.
++"""
++import numpy as np
++import pandas as pd
++import pytest
++
++from tradex.risk.exposure import ESModel
++
++
++def test_tail_of_600_days_is_15_worst_days():
++    r = np.zeros(600)
++    r[:15] = -0.10
++    rets = pd.DataFrame({"FX:JPY": r}, index=pd.date_range("2020-01-01", periods=600, freq="D", tz="UTC"))
++    es = ESModel(rets, window=600, min_hist=250).es({"FX:JPY": 1_000.0})
++    assert es == pytest.approx(100.0)
+diff --git a/tradex/risk/exposure.py b/tradex/risk/exposure.py
+index e5e36cc..2e09abd 100644
+--- a/tradex/risk/exposure.py
++++ b/tradex/risk/exposure.py
+@@ -134,7 +134,7 @@ class ESModel:
+         r = self.returns[cols].dropna(how="all").fillna(0.0).tail(self.window)
+         if len(r) >= self.min_hist:
+             pnl = r.to_numpy() @ e
+-            k = max(1, int(np.ceil(len(pnl) * (1 - self.alpha))))
++            k = max(1, int(np.ceil(len(pnl) * (1 - self.alpha) - 1e-9)))     # not 15.000000000000013 -> 16
+             return float(-np.sort(pnl)[:k].mean())
+         if self._cov is None:
+             self._cov = ewma_cov(self.returns, self.lam)
