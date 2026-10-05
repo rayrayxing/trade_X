@@ -132,7 +132,8 @@ class TradingCore:
         self.sanity_pol = SanityPolicy(**pol.get("sanity", {}))
         self.tier = int(pol["book"].get("start_tier", 2))
         self.costs = costs or {"stocks": model_for("stocks"), "forex": model_for("forex")}
-        self.ids = DecisionIds()
+        # paper/live: continue today's numbering after a restart; replay keeps its own fresh count
+        self.ids = DecisionIds.from_ledger(ledger) if self.cfg.live else DecisionIds()
         self.paused = False
         self.tfs = sorted({s.signal_tf for s in self.strategies}, key=duration)
         self.base_tf = base_tf or (self.tfs[0] if self.tfs else "H1")

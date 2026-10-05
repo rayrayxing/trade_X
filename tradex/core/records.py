@@ -39,18 +39,27 @@ class Outcome(str, Enum):
 
 
 class DecisionIds:
-    """Decision IDs like 2026-11-02-0147: date of the decision plus a per-day counter."""
+    """Decision IDs like 2026-11-02-0147: date of the decision plus a per-day counter.
 
-    def __init__(self) -> None:
+    ``seeded`` maps a day to the highest counter already used that day (``from_ledger``), so
+    a same-day restart continues numbering: a reused ID would collide with the client order
+    IDs the venue already holds for it."""
+
+    def __init__(self, seeded: dict[str, int] | None = None) -> None:
         self._lock = threading.Lock()
         self._day: str | None = None
         self._n = itertools.count(1)
+        self._seeded = dict(seeded or {})
+
+    @classmethod
+    def from_ledger(cls, ledger) -> "DecisionIds":
+        return cls(ledger.max_decision_numbers())
 
     def next(self, ts: pd.Timestamp) -> str:
         day = pd.Timestamp(ts).strftime("%Y-%m-%d")
         with self._lock:
             if day != self._day:
-                self._day, self._n = day, itertools.count(1)
+                self._day, self._n = day, itertools.count(self._seeded.get(day, 0) + 1)
             return f"{day}-{next(self._n):04d}"
 
 
