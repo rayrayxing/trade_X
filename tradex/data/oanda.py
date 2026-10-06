@@ -141,19 +141,33 @@ def parse_stream_line(line: str | bytes) -> Tick | str | None:
     return None
 
 
+def _set_read_timeout(resp, seconds: float) -> None:
+    """Shorten the socket timeout once the headers are in. If the socket can't be reached
+    the open timeout stays in force, which only makes silence detection slower."""
+    try:
+        resp.fp.raw._sock.settimeout(seconds)
+    except AttributeError:
+        log.warning("price stream: could not set the heartbeat read timeout", extra={"seconds": seconds})
+
+
 class PriceStream:
     """Streams ticks and reconnects on drop or silence.
 
     Oanda sends a heartbeat every 5 s, so ``heartbeat_timeout`` (7 s) of silence means the
     connection is dead; the first reconnect is immediate and later retries are at most
     2 s apart, so a drop heals well inside 10 s whenever Oanda is reachable.
+
+    Opening is timed separately (``open_timeout``): the practice stream host has been seen
+    taking about 24 s to send its response headers, so applying the 7 s silence window to
+    the open made every attempt time out and reconnect forever.
     """
 
     def __init__(self, instruments: list[str], account_id: str | None = None, token: str | None = None, *,
                  connect: Callable[[], Iterator[bytes | str]] | None = None, heartbeat_timeout: float = 7.0,
-                 retry_delays: tuple[float, ...] = (0.0, 1.0, 2.0), sleep: Callable[[float], None] = time.sleep):
+                 open_timeout: float = 60.0, retry_delays: tuple[float, ...] = (0.0, 1.0, 2.0), sleep: Callable[[float], None] = time.sleep):
         self.instruments = instruments
         self.heartbeat_timeout = heartbeat_timeout
+        self.open_timeout = open_timeout
         self.retry_delays = retry_delays
         self._sleep = sleep
         self._account, self._token = account_id, token
@@ -166,7 +180,8 @@ class PriceStream:
         url = (f"https://{STREAM_HOST}/v3/accounts/{acct}/pricing/stream?"
                + urllib.parse.urlencode({"instruments": ",".join(self.instruments)}))
         req = urllib.request.Request(check_host(url), headers={"Authorization": f"Bearer {self._token or secrets.get('oanda_token')}"})
-        resp = urllib.request.urlopen(req, timeout=self.heartbeat_timeout)   # per-read timeout = silence detector
+        resp = urllib.request.urlopen(req, timeout=self.open_timeout)
+        _set_read_timeout(resp, self.heartbeat_timeout)                     # per-read timeout = silence detector
         return iter(resp)
 
     def ticks(self, max_reconnects: int | None = None) -> Iterator[Tick]:
