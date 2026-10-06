@@ -12,12 +12,20 @@ What it guarantees before anything runs:
 - the runner's ``before_close`` hook drains the Oanda stream through the bar builders into
   the bar store the core reads, and a silent stream is a fault.
 
-Venue adapters live in ``tradex/execution`` (protected, Ray's) and do not exist yet, so a
-real run refuses to start without them; ``dry=True`` builds everything else, connects no
+- every venue account currency that is not USD (the Oanda practice account is in SGD) has
+  its USD pair (USD_SGD) on the Oanda price stream, so account equity, margin, fills and
+  financing convert at a live quote; a missing quote raises MissingRate (block + fault);
+- a venue without resting stops (moomoo SIMULATE: ``check_stops``) gets a StopGuardian
+  that checks live marks at least once a minute; ``Runtime.start`` runs it in a thread and
+  each close checks it is still alive.
+
+Venue adapters live in ``tradex/execution`` (protected, Ray's); ``tradex.runtime.paper``
+builds them from config/accounts.yaml. ``dry=True`` builds everything else, connects no
 broker and fetches nothing, and ``Runtime.readiness()`` says what is and is not in place.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -30,7 +38,7 @@ from tradex.core.loop import INACTIVE, CoreConfig, TradingCore
 from tradex.core.replay import factor_returns
 from tradex.costs.models import OandaFxCosts, configure_run_mode, model_for
 from tradex.data.guard import STRICT, RealDataMissing, require_present, require_real_data
-from tradex.data.oanda import QuoteBook, instruments_to_stream
+from tradex.data.oanda import _USD_PAIR, QuoteBook, instruments_to_stream
 from tradex.events import EventCalendar
 from tradex.risk.exposure import ESModel
 from tradex.risk.gate import RiskGate
@@ -45,8 +53,53 @@ from tradex.strategy.spec import StrategySpec
 from tradex.timeframes import duration
 
 MAX_BUILT_TF = "H1"                      # bar builders make M1..H1; higher timeframes are resampled
-SECRETS = {"forex": ("oanda_token", "oanda_account_id"), "stocks": ("moomoo_sim_account_id",),
+# moomoo's SIMULATE account ID is optional: config/accounts.yaml lets the adapter auto-select it
+SECRETS = {"forex": ("oanda_token", "oanda_account_id"), "stocks": ("alpaca_key_id", "alpaca_secret"),
            "alerts": ("telegram_bot_token", "telegram_chat_id")}
+GUARDIAN_INTERVAL_S = 60.0               # the stop guardian checks marks at least this often
+
+
+def usd_pairs(currencies) -> list[str]:
+    """The Oanda instruments that price each account currency in USD (USD_SGD for SGD)."""
+    out = set()
+    for c in currencies:
+        if c == "USD":
+            continue
+        if c not in _USD_PAIR:
+            raise RealDataMissing(f"no Oanda USD pair known for account currency {c}")
+        out.add(_USD_PAIR[c])
+    return sorted(out)
+
+
+def stream_instruments(fx_symbols, account_currencies=()) -> list[str]:
+    """Everything the Oanda stream must carry: traded pairs, their USD crosses, and the
+    USD pair of every non-USD venue account currency."""
+    return sorted(set(instruments_to_stream(fx_symbols)) | set(usd_pairs(account_currencies)))
+
+
+def _default_guardian(venue, marks, on_fault, **kw):
+    from tradex.execution.guardian import StopGuardian   # Ray's (protected); imported only when a venue needs it
+    return StopGuardian(venue, marks, on_fault, **kw)
+
+
+class _QuietFaults:
+    """The guardian's fault hook: one Health row per distinct fault per ``every`` (it runs
+    each minute), and none for missing marks while ``quiet(now)`` (market closed)."""
+
+    def __init__(self, health, clock: Clock, every: pd.Timedelta = pd.Timedelta(minutes=15),
+                 quiet: Callable[[pd.Timestamp], bool] | None = None):
+        self.health, self.clock, self.every, self.quiet = health, clock, every, quiet
+        self._last: dict[str, pd.Timestamp] = {}
+
+    def __call__(self, check: str, detail: str) -> None:
+        now = self.clock.now()
+        if self.quiet is not None and self.quiet(now) and "mark" in detail:
+            return
+        seen = self._last.get(detail)
+        if seen is not None and now - seen < self.every:
+            return
+        self._last[detail] = now
+        self.health(check, False, detail, now)
 
 
 class VenuesMissing(RuntimeError):
@@ -72,6 +125,30 @@ class Runtime:
     feed: StreamFeed | None
     feeds: list[Any]
     checks: list[Check] = field(default_factory=list)
+    guardians: list[Any] = field(default_factory=list)
+    stop_event: threading.Event = field(default_factory=threading.Event)
+    threads: list[threading.Thread] = field(default_factory=list)
+
+    def start(self) -> None:
+        """Start the background threads: the Oanda stream reader and each stop guardian."""
+        if self.dry:
+            raise RuntimeError("a dry runtime connects nothing and cannot start")
+        if self.feed is not None and self.feed.thread is None:
+            self.threads.append(self.feed.start())
+        for g in self.guardians:
+            t = threading.Thread(target=g.run, args=(self.stop_event,), name=f"stop-guardian-{g.asset_class}",
+                                 daemon=True)
+            t.start()
+            self.threads.append(t)
+
+    def run(self, sleep: Callable[[float], None], stop: Callable[[], bool] | None = None) -> None:
+        """The live loop until ``stop()`` (or ``stop_event``); stops the guardians on the way out."""
+        def done() -> bool:
+            return self.stop_event.is_set() or (stop is not None and stop())
+        try:
+            self.runner.run(sleep, done)
+        finally:
+            self.stop_event.set()
 
     @property
     def ready(self) -> bool:
@@ -94,10 +171,19 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
                   clock: Clock | None = None, config: RuntimeConfig | None = None,
                   policy_path: str | Path | None = None, calendar: EventCalendar | None = None,
                   warmup_bars: int = 500, has_secret: Callable[[str], bool] | None = None,
-                  dry: bool = False, profit=None) -> Runtime:
+                  dry: bool = False, accounts: dict[str, str] | None = None,
+                  account_currencies: set[str] | None = None,
+                  marks: dict[str, Callable[[list[str]], dict[str, float]]] | None = None,
+                  guardian_factory: Callable[..., Any] | None = None,
+                  quiet_marks: Callable[[pd.Timestamp], bool] | None = None,
+                  profit=None) -> Runtime:
     """``history[asset_class]`` is the bar provider for start-up history; ``stream`` is the
-    Oanda price stream (forex); ``feeds[asset_class]`` is any other live bar feed (an object
-    with ``before_close(tf, ts)``). ``venues[asset_class]`` are the venue adapters."""
+    Oanda price stream; ``feeds[asset_class]`` is any other live bar feed (an object with
+    ``before_close(tf, ts)``, and ``bind(store, health)`` if it needs them).
+    ``venues[asset_class]`` are the venue adapters (behind the order guard), ``accounts``
+    their agent account names. ``account_currencies`` defaults to what the venues report;
+    each non-USD one must have its USD pair on the stream. ``marks[asset_class]`` is the
+    live mark source for a venue's stop guardian (a venue with ``check_stops``)."""
     if mode not in STRICT:
         raise ValueError(f"build_runtime is for paper/live, not {mode!r}; replay uses tradex.core.replay")
     cfg = config or RuntimeConfig.load()
@@ -115,11 +201,25 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
         checks.append(Check(f"history:{ac}", "ok", _label(history[ac])))
     quotes = quotes if quotes is not None else QuoteBook(max_age_s=cfg.quote_max_age_s)
     fx_syms = sorted({u for s in specs if s.asset_class == "forex" for u in s.universe if not u.startswith("$")})
-    if fx_syms:
+    if not dry and account_currencies is None:
+        account_currencies = {v.account().currency for v in (venues or {}).values()}
+    acct_pairs = usd_pairs(account_currencies or ())
+    if fx_syms or acct_pairs:
         require_real_data(mode, stream)
         require_real_data(mode, quotes)
+        need = stream_instruments(fx_syms, account_currencies or ())
+        have = getattr(stream, "instruments", None)
+        if have is not None and set(need) - set(have):
+            raise RealDataMissing(f"{mode}: the Oanda stream lacks {sorted(set(need) - set(have))}")
         checks.append(Check("feed:forex", "ok", f"{_label(stream)} -> {_label(quotes)} -> bar builders "
-                                                f"({len(instruments_to_stream(fx_syms))} instruments)"))
+                                                f"({len(need)} instruments)"))
+    if account_currencies is None:
+        checks.append(Check("fx:accounts", "skip", "account currencies are read from the venues at start; "
+                                                   "each non-USD one gets its USD pair on the stream"))
+    else:
+        ccys = sorted(account_currencies)
+        checks.append(Check("fx:accounts", "ok", ", ".join(ccys) + (f"; {', '.join(acct_pairs)} on the Oanda stream "
+                                                                   "(no quote: block and fault)" if acct_pairs else "")))
     for ac in classes:
         if ac == "forex":
             continue
@@ -146,7 +246,7 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
         if missing:
             raise VenuesMissing(f"no venue adapter for {missing}: adapters live in tradex/execution and need Ray")
         checks.append(Check("broker", "ok", ", ".join(f"{ac}={_label(v)}" for ac, v in venues.items())))
-    book = MultiVenueBook(dict(venues or {}), rates, clock)
+    book = MultiVenueBook(dict(venues or {}), rates, clock, accounts)
 
     # 4. bars: history now (not in a dry run), the stream at every close
     tfs = sorted({s.signal_tf for s in specs}, key=duration)
@@ -173,14 +273,37 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     core = TradingCore(specs, store, clock, ledger, gate, brokers={"ensemble": book}, rates=rates,
                        calendar=calendar, cfg=core_cfg, symbols=symbols, base_tf=base_tf, costs=costs, profit=profit)
     feed = None
-    if fx_syms:
+    if fx_syms or acct_pairs:
         feed = StreamFeed(stream, quotes, store, fx_syms, base_tf, core.health,
                           pd.Timedelta(seconds=cfg.stale_after_s), clock.now)
+    for ac in classes:
+        if ac in feeds and hasattr(feeds[ac], "bind"):
+            feeds[ac].bind(store, core.health)
     hooks = ([feed] if feed else []) + [feeds[ac] for ac in classes if ac in feeds]
+
+    # stop guardians for venues whose stops the core manages (moomoo SIMULATE)
+    guardians, silent = [], set()
+    for ac, v in book.venues.items():
+        if not hasattr(v, "check_stops"):
+            continue
+        src = (marks or {}).get(ac)
+        if src is None:
+            raise RealDataMissing(f"{mode}: {ac} venue needs live marks for its stop guardian")
+        make = guardian_factory or _default_guardian
+        guardians.append(make(v, src, _QuietFaults(core.health, clock, quiet=quiet_marks),
+                              interval_s=GUARDIAN_INTERVAL_S, asset_class=ac, clock=clock.now))
+        checks.append(Check(f"stop_guardian:{ac}", "ok", f"{_label(v)} stops checked every "
+                                                         f"{GUARDIAN_INTERVAL_S:.0f}s against {_label(src)}"))
 
     def before_close(tf: str, ts: pd.Timestamp) -> None:
         for h in hooks:
             h.before_close(tf, ts)
+        for g in guardians:                       # a guardian that stopped pinging is a fault, once
+            alive = g.alive(clock.now())
+            if alive == (g.asset_class in silent):
+                (silent.discard if alive else silent.add)(g.asset_class)
+                core.health("stop_guardian", alive, f"{g.asset_class} stop guardian "
+                                                    f"{'back' if alive else 'silent: stops are unwatched'}", ts)
     sched = BarCloseScheduler(sorted(set(tfs) | {base_tf}, key=duration), ledger,
                               grace=pd.Timedelta(seconds=cfg.grace_s), done_until=clock.now())
     runner = LiveRunner(core, sched, before_close, overrun=pd.Timedelta(seconds=cfg.overrun_s))
@@ -194,4 +317,4 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
             miss = [n for n in names if not has_secret(n)]
             checks.append(Check(f"secrets:{group}", "FAIL" if miss else "ok",
                                 f"missing {', '.join(miss)} (run trade-x setup)" if miss else "set"))
-    return Runtime(mode, dry, core, runner, store, quotes, book, feed, hooks, checks)
+    return Runtime(mode, dry, core, runner, store, quotes, book, feed, hooks, checks, guardians)

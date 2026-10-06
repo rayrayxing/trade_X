@@ -32,7 +32,8 @@ def load(p: Path) -> dict:
 
 def test_six_services_and_a_heartbeat_timer_exist():
     labels = {load(p)["Label"] for p in PLISTS}
-    assert labels == {f"com.tradex.{s}" for s in SERVICES} | {"com.tradex.heartbeat"}
+    # timers, not services: the heartbeat and the weekly research loop
+    assert labels == {f"com.tradex.{s}" for s in SERVICES} | {"com.tradex.heartbeat", "com.tradex.research-loop"}
     assert len(labels) == len(PLISTS)
 
 

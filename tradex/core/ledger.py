@@ -274,6 +274,16 @@ class Ledger:
         cls = RECORD_TYPES[kind]
         return [cls.from_dict(d) for d in self.rows(kind=kind, **kw)]
 
+    def max_decision_numbers(self) -> dict[str, int]:
+        """Highest per-day counter of every YYYY-MM-DD-NNNN decision ID in the ledger, by day."""
+        out: dict[str, int] = {}
+        for (did,) in self.db.execute("SELECT DISTINCT decision_id FROM events WHERE decision_id GLOB "
+                                      "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]*'"):
+            day, _, n = did[:10], did[10], did[11:]
+            if n.isdigit():
+                out[day] = max(out.get(day, 0), int(n))
+        return out
+
     def why(self, decision_id: str) -> list[dict[str, Any]]:
         """Every row about one decision, in order: the full record behind an alert or dashboard row."""
         return self.rows(decision_id=decision_id)

@@ -12,6 +12,7 @@ with your own command when you are ready. Nothing here places an order or touche
 | `com.tradex.gateway-proxy` | the model gateway proxy (EasyCLIProxyAPI) on localhost | the proxy binary, set in `ops.env` |
 | `com.tradex.dashboard` | the read-only web dashboard, `http://127.0.0.1:8765` | `pip install -e '.[dashboard]'` |
 | `com.tradex.backup` | nightly encrypted restic backup at 06:30 | external drive, `restic` |
+| `com.tradex.research-loop` | the weekly research loop (`tradex research loop`), Saturdays 10:00: propose, screen, walk-forward, holdout, paper queue, health, report. Paper only, places no orders. Recommends paper promotion unless `TRADEX_LOOP_APPLY=1` | bar caches, the locked holdout, `tradex research loop --dry-plan` to preview |
 | `com.tradex.heartbeat` | a timer, not a service: every 5 min, pings healthchecks.io if all is well | a healthchecks.io check |
 
 They are **LaunchAgents** (they run as you, while you are logged in), not system daemons, because the

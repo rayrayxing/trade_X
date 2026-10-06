@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The weekly research loop, Saturdays at 10:00 local time (markets closed, Mac awake). Install copies this
+         file; nothing starts until you run launchctl bootstrap yourself. Paper only; places no orders. -->
+    <key>Label</key>
+    <string>com.tradex.research-loop</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__TRADEX_HOME__/ops/bin/research-loop.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__TRADEX_HOME__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>TRADEX_HOME</key>
+        <string>__TRADEX_HOME__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>6</integer>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>ExitTimeOut</key>
+    <integer>300</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/tradex/research-loop.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/tradex/research-loop.err.log</string>
+</dict>
+</plist>
