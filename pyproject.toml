@@ -30,7 +30,7 @@ trade-x = "tradex.cli:main"
 include = ["tradex*"]
 
 [tool.setuptools.package-data]
-tradex = ["py.typed", "costs/*.csv", "dashboard/static/*"]
+tradex = ["py.typed", "costs/*.csv", "dashboard/static/*", "dashboard/static/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

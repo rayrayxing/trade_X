@@ -13,7 +13,7 @@ from typing import Any
 from tradex.dashboard.views import Sources, Views, clean
 
 STATIC = Path(__file__).resolve().parent / "static"
-CSP = ("default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; "
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 POLL_S = 2.0
 HEARTBEAT_S = 20.0

@@ -28,6 +28,8 @@ from tradex.core.ledger import Ledger
 
 REAL_PREFIXES = ("paper", "live")
 NON_REAL_PREFIXES = ("replay", "parity", "dry", "test", "backtest")
+STALE_AFTER_S = 6 * 3600           # a paper or live core writes a row every bar; this long silent means it stopped
+WEEKEND_GAP_MAX_S = 80 * 3600      # the market-closed weekend can legitimately leave a gap this long
 MIN_TRADES = 30                    # same bar as config/gates/readiness.yaml (paper_trades_per_venue)
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,24}$")
 TIMELINE_KINDS = ("plan", "veto", "verdict", "order", "fill", "close", "health", "agent_output", "exit_change")
@@ -271,7 +273,7 @@ class Views:
             snap = self._latest_snapshot(led)
             prev = self._snapshot_before(led, start)
             health = self._health_latest(led)
-            attention = self._attention(meta, health, led)
+            attention = self._attention(meta, health, led, now)
             pos = (snap or {}).get("positions", [])
             lim = (snap or {}).get("limits", {})
             eq = (snap or {}).get("equity_usd")
@@ -301,8 +303,35 @@ class Views:
         bits.append(f"{counts['close']} closed today")
         return ". ".join(bits) + "."
 
-    def _attention(self, meta, health, led) -> list[dict[str, str]]:
+    def stale_age_s(self, meta: dict[str, Any], now: datetime | None = None) -> float | None:
+        """Seconds since the last ledger row when a paper or live run has gone quiet, else None.
+
+        The core writes at least one row per bar, so hours of silence mean it stopped (Mac asleep, crash). Quiet
+        is expected over the weekend market gap (Friday 21:00 UTC to Monday 04:00 UTC); replays are never
+        judged, since their rows are old by design."""
+        if not meta.get("real"):
+            return None
+        last = parse_ts(meta.get("last_event_time"))
+        if last is None:
+            return None
+        now = (now or self.now()).astimezone(timezone.utc)
+        age = (now - last).total_seconds()
+        if age <= STALE_AFTER_S:
+            return None
+        weekend_gap = ((now.weekday() == 4 and now.hour >= 21) or now.weekday() in (5, 6)
+                       or (now.weekday() == 0 and now.hour < 4))
+        if weekend_gap and age < WEEKEND_GAP_MAX_S:
+            return None
+        return age
+
+    def _attention(self, meta, health, led, now: datetime | None = None) -> list[dict[str, str]]:
         out = []
+        stale = self.stale_age_s(meta, now)
+        if stale is not None:
+            hours = stale / 3600
+            out.append({"level": "fault", "text": "No ledger activity for "
+                        + (f"{hours:.0f} hours" if hours < 48 else f"{hours / 24:.0f} days")
+                        + ". The core may have stopped (Mac asleep, or the run crashed).", "time": meta.get("last_event_time")})
         for h in health:
             if not h["ok"]:
                 out.append({"level": "fault", "text": f"{h['check']}: {h['detail'] or 'failing'}", "time": h["time"]})
