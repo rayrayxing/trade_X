@@ -6,6 +6,10 @@
 # Account IDs are never written in this file. Leave `account_id` empty: `trade-x setup`
 # stores the ID in the macOS Keychain under the secret named in `secret`, and the loader
 # reads it from there. An account whose ID cannot be resolved is not agent-owned.
+#
+# `auto_select: true` (moomoo only, Ray 5 Oct 2026): with no secret set, the adapter asks
+# OpenD for the account list and uses the single SIMULATE account with US trading rights;
+# zero or several such accounts refuse to start. A REAL account is never a candidate.
 accounts:
   - name: oanda-practice
     venue: oanda
@@ -21,4 +25,5 @@ accounts:
     environment: SIMULATE
     asset_classes: [stocks]
     secret: moomoo_sim_account_id
+    auto_select: true
     account_id: ""
