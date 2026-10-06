@@ -32,6 +32,9 @@ every vote still valid across timeframes: an H1 and an H4 strategy can form one 
 plan forms only when a vote is fresh at this close; its entry fills at the next bar of the
 base (finest) timeframe.
 
+Venue financing (Oanda daily financing) becomes one Financing row per venue transaction
+at each close; the Close row keeps the venue's net P&L, which already includes it.
+
 Agent requests are veto, shrink, close and flag (``tradex.core.actions``); agents run in
 shadow, recording what they would have done, until ``agents.mode`` is active.
 
@@ -132,7 +135,8 @@ class TradingCore:
         self.sanity_pol = SanityPolicy(**pol.get("sanity", {}))
         self.tier = int(pol["book"].get("start_tier", 2))
         self.costs = costs or {"stocks": model_for("stocks"), "forex": model_for("forex")}
-        self.ids = DecisionIds()
+        # paper/live: continue today's numbering after a restart; replay keeps its own fresh count
+        self.ids = DecisionIds.from_ledger(ledger) if self.cfg.live else DecisionIds()
         self.paused = False
         self.tfs = sorted({s.signal_tf for s in self.strategies}, key=duration)
         self.base_tf = base_tf or (self.tfs[0] if self.tfs else "H1")
@@ -162,6 +166,7 @@ class TradingCore:
         self._place_err = ""
         self._resized: dict[str, int] = {}
         self.desk = AgentDesk(self, self.cfg.agents_mode)
+        self._financed = {r.get("txn_id") for r in ledger.rows(kind="financing")}   # idempotent across restarts
 
     def _sim(self, book: str, cash: float) -> SimBroker:
         return SimBroker(cash, self.costs, bar=self.bar, book=book, rate_fn=self.rates.usd_per_unit)
@@ -213,6 +218,7 @@ class TradingCore:
         self._last_begin = ts
         self._apply_commands(ts)
         self.desk.ingest(ts)
+        self._ingest_financing(ts)
         self._maybe_snapshot(ts)
 
     def _fills_step(self, sym: str, tf: str, close_t: pd.Timestamp, bar: pd.Series) -> None:
@@ -307,6 +313,26 @@ class TradingCore:
         if closed:
             st[0] += 1
             self.meta.pop((book, f.decision_id), None)
+
+    def _ingest_financing(self, t: pd.Timestamp) -> None:
+        """Venue financing (Oanda daily financing) into Financing rows, once per transaction.
+        The Close row keeps the venue's net P&L, which already includes it."""
+        for book, br in self.brokers.items():
+            fn = getattr(br, "financing_records", None)
+            if fn is None:
+                continue
+            try:
+                recs = fn()
+            except Exception as exc:  # noqa: BLE001 - e.g. no live rate for the account currency: a fault
+                if not self.cfg.live:
+                    raise
+                self._health("broker", False, f"{book} financing: {type(exc).__name__}: {exc}", t)
+                continue
+            for r in recs:
+                if r.txn_id in self._financed:
+                    continue
+                self._financed.add(r.txn_id)
+                self.ledger.append(replace(r, book=book))
 
     def _asset_class(self, m: _Meta) -> str:
         spec = self.spec_by_id.get(m.strategy_id)
