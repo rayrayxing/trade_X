@@ -175,6 +175,7 @@ def test_cli_real_run_refuses_without_venue_adapters(tmp_path, capsys, monkeypat
     import tradex.secrets
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(tradex.secrets, "has", lambda name: True)
+    monkeypatch.setattr(tradex.secrets, "get", lambda name: "TEST-" + name)   # CI has no Keychain account IDs
     import tradex.execution
     for name in ("oanda", "moomoo"):                                     # adapters unimportable: never connects
         monkeypatch.setitem(sys.modules, f"tradex.execution.{name}", None)
