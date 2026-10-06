@@ -9,6 +9,7 @@ anything ranked or screened on them still carries survivorship bias.
 
     python -m tradex.research.universe opend      # first list, daily + 60-minute bars
     python -m tradex.research.universe pool       # candidate pool, daily + 60-minute bars
+    python -m tradex.research.universe etfs3      # round-3 equity ETFs, daily bars
     python -m tradex.research.universe oanda      # FX bid/ask H1/H4/D via Oanda practice
 """
 from __future__ import annotations
@@ -41,6 +42,11 @@ SP100 = ["AAPL", "ABBV", "ABT", "ACN", "ADBE", "AIG", "AMD", "AMGN", "AMT", "AMZ
 EXTRA_ETFS = ["EFA", "EEM", "IEF", "HYG", "LQD", "SLV", "VNQ"]
 ETFS = INDEX_ETFS + SECTOR_ETFS + MACRO_ETFS + EXTRA_ETFS
 STOCKS = list(dict.fromkeys(SP100 + SEED_STOCKS + PAIR_STOCKS))
+# Research round 3: liquid US-listed equity ETFs with daily history from about 2006, for the
+# panic-rebound variants that need more symbols per event (daily bars only, 12 symbols of quota).
+# A separate wider pool, so the 22-ETF pool every other strategy screens stays as it was.
+ROUND3_ETFS = ["SMH", "XBI", "KRE", "ITB", "XHB", "XOP", "XRT", "IBB", "EWJ", "EWZ", "FXI", "VWO"]
+ETFS_WIDE = ETFS + ROUND3_ETFS
 POOL = [s for s in SP100 + EXTRA_ETFS if s not in US_DAILY]
 
 FX_PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "USD_CHF", "NZD_USD", "EUR_JPY", "GBP_JPY"]
@@ -78,5 +84,9 @@ def download_pool(max_new_symbols: int = 80) -> None:
     download_opend(max_new_symbols, (("D1", POOL), ("H1", POOL)))
 
 
+def download_round3(max_new_symbols: int = 12) -> None:
+    download_opend(max_new_symbols, (("D1", ROUND3_ETFS),))
+
+
 if __name__ == "__main__":
-    {"opend": download_opend, "pool": download_pool, "oanda": download_oanda}[sys.argv[1]]()
+    {"opend": download_opend, "pool": download_pool, "etfs3": download_round3, "oanda": download_oanda}[sys.argv[1]]()

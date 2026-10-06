@@ -86,6 +86,14 @@ class TrialLedger:
             return int(c.execute("SELECT COUNT(DISTINCT params_hash) FROM trials WHERE strategy_id = ?",
                                  (strategy_id,)).fetchone()[0])
 
+    def count_group(self, strategy_ids: list[str]) -> int:
+        """Distinct (strategy, parameter set) pairs across several strategy ids: the N for a
+        variant that tests the same hypothesis as others (a wider universe, another bar size)."""
+        ids = list(dict.fromkeys(strategy_ids))
+        with self._conn() as c:
+            return int(c.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT strategy_id, params_hash FROM trials "
+                                 f"WHERE strategy_id IN ({','.join('?' * len(ids))}))", ids).fetchone()[0])
+
     def runs(self, strategy_id: str) -> int:
         with self._conn() as c:
             return int(c.execute("SELECT COUNT(DISTINCT run_id) FROM trials WHERE strategy_id = ?",

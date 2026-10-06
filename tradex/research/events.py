@@ -121,3 +121,27 @@ def event_window_columns(bars: pd.DataFrame, times: pd.DatetimeIndex, bar_td: pd
             if 0 <= i < n - 1 and target - close_t[i] <= max_gap:
                 out[i] = 1.0
     return pd.DataFrame({"evt_enter": enter, "evt_leave": leave}, index=bars.index)
+
+
+def daily_event_columns(bars: pd.DataFrame, times: pd.DatetimeIndex, tz: str = NY) -> pd.DataFrame:
+    """Close-to-close flags on daily bars for holding from the close of the session before each
+    announcement day to the close of the announcement day (pre-FOMC drift on D1).
+
+    For a strategy with ``fill: next_close`` (orders fill at the next bar's close): ``evt_enter``
+    is 1 two sessions before the announcement session, so the entry fills at the previous
+    session's close; ``evt_leave`` is 1 on the session before, so the exit fills at the
+    announcement session's close. The flags read only the published schedule and the
+    trading calendar (sessions are known in advance; the bars stand in for the exchange
+    calendar), never a price. An announcement on a day with no bar is skipped, and so is one
+    whose sessions are not all in the data yet.
+    """
+    n = len(bars)
+    enter, leave = np.zeros(n), np.zeros(n)
+    dates = session_dates(bars.index, tz)
+    for e in pd.DatetimeIndex(times):
+        d = pd.Timestamp(e).tz_convert(tz).tz_localize(None).normalize()
+        t = int(dates.searchsorted(d, side="left"))
+        if t >= n or dates[t] != d or t < 2:
+            continue
+        enter[t - 2], leave[t - 1] = 1.0, 1.0
+    return pd.DataFrame({"evt_enter": enter, "evt_leave": leave}, index=bars.index)

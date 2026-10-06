@@ -22,7 +22,7 @@ PLANNED = [p for p in gate.PLANS if p.spec is not None and p.spec.parent == gate
 
 
 def test_proposed_specs_validate_and_are_never_marked_validated():
-    assert len(SPECS) == 12        # the 11 first proposals plus etf-vix-panic-rebound (Cboe VIX)
+    assert len(SPECS) == 17        # 11 first proposals, etf-vix-panic-rebound, etf-pre-fomc-drift-d1, 4 panic-rebound pool variants
     for s in SPECS.values():
         assert s.validate() == [], s.id
         assert s.status == "proposed" and s.provenance["author"] == "claude"
@@ -198,6 +198,32 @@ def test_pre_fomc_strategy_holds_from_24h_before_to_just_before_the_statement(tm
     check_causal(spec, data["SPY"])
 
 
+def test_daily_pre_fomc_holds_from_the_prior_close_to_the_statement_day_close(tmp_path, monkeypatch):
+    root = tmp_path / "opend"
+    for i, s in enumerate(SPECS["etf-pre-fomc-drift-d1"].universe):
+        CsvProvider(root).save(s, "D1", ny_daily(60, seed=i, start="2023-12-01"))
+    f = tmp_path / "fomc.csv"
+    f.write_text("time\n" + FOMC[0].isoformat() + "\n")
+    monkeypatch.setattr(builders, "FOMC_FILE", f)
+    spec = SPECS["etf-pre-fomc-drift-d1"]
+    assert spec.fill == "next_close" and "etf-pre-fomc-drift-h1" in spec.provenance["shares_trials_with"]
+    data, missing = builders.fomc_daily(spec, root)
+    assert not missing
+    spy = data["SPY"]
+    res = run_backtest(spec, {"SPY": spy}, cfg=EngineConfig(risk_pct=1.0))
+    assert len(res.trades) == 1
+    t = res.trades.iloc[0]
+    day = lambda ts: (pd.Timestamp(ts) - pd.Timedelta(days=1)).tz_convert(NY).date().isoformat()   # bar closed at ts
+    assert day(t.entry_time) == "2024-01-30" and day(t.exit_time) == "2024-01-31"
+    pos = {d.date().isoformat(): i for i, d in enumerate(spy.index.tz_convert(NY))}
+    assert t.entry_price == pytest.approx(spy.close.iloc[pos["2024-01-30"]], rel=1e-3)
+    assert t.exit_price == pytest.approx(spy.close.iloc[pos["2024-01-31"]], rel=1e-3)
+    # the flags read the schedule and the session calendar only: other prices on the same sessions, same flags
+    from tradex.research.events import daily_event_columns
+    other = ny_daily(60, seed=99, start="2023-12-01")
+    assert (daily_event_columns(other, FOMC).to_numpy() == spy[["evt_enter", "evt_leave"]].to_numpy()).all()
+
+
 def test_pre_fomc_needs_the_historical_calendar(tmp_path, monkeypatch):
     root = tmp_path / "opend"
     for i, s in enumerate(["SPY"]):
@@ -266,3 +292,20 @@ def test_single_strategy_runs_select_by_strategy_id_and_write_their_own_result(t
     assert "fx-carry-trend: needs data" in capsys.readouterr().out
     assert (tmp_path / "results" / "single" / "fx-carry-trend.json").exists()
     assert not (tmp_path / "results" / "phase1_gate.json").exists()
+
+
+def test_panic_rebound_variants_share_one_trial_group_and_screen_their_whole_pool():
+    from tradex.backtest.validation import trial_group
+    from tradex.research.universe import ETFS, ETFS_WIDE
+    ids = {s for s in SPECS if "panic-rebound" in s}
+    assert len(ids) == 6
+    for sid in ids:
+        assert set(trial_group(SPECS[sid])) == ids
+    plans = {p.spec.stem: p for p in PLANNED if p.spec.stem in ids and p.pool}
+    assert {k: (p.pool, p.screen_n) for k, p in plans.items()} == {
+        "etf-panic-rebound-pool22": ("etfs", len(ETFS)), "etf-vix-panic-rebound-pool22": ("etfs", len(ETFS)),
+        "etf-panic-rebound-pool34": ("etfs_wide", len(ETFS_WIDE)), "etf-vix-panic-rebound-pool34": ("etfs_wide", len(ETFS_WIDE))}
+    for k, p in plans.items():
+        assert SPECS[k].universe == gate.pool_symbols(p.pool)
+        base = SPECS[k.rsplit("-pool", 1)[0]]
+        assert (SPECS[k].entry, SPECS[k].exit, SPECS[k].search_space) == (base.entry, base.exit, base.search_space)

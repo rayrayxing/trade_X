@@ -19,6 +19,10 @@ STATUSES = ["proposed", "screened", "backtested", "validated", "paper", "live", 
 ASSET_CLASSES = ["stocks", "forex"]
 BAR_NAMES = {"open", "high", "low", "close", "volume"}
 WATCHLIST_TOKEN = "$watchlist"
+# When an order decided at a bar's close fills: at the next bar's open (default), or at the
+# next bar's close (a market-on-close order placed a session ahead, for windows that run
+# close to close on daily bars). Either way the decision uses only bars already closed.
+FILLS = ["next_open", "next_close"]
 
 # --- entry filters -------------------------------------------------------------------
 # A filter returns a boolean Series: True where new entries are allowed.
@@ -110,6 +114,7 @@ class StrategySpec:
     hypothesis: str = ""
     family: str = "other"              # one of tradex.core.records.FAMILIES; correlated strategies share a vote
     stats: dict[str, Any] = field(default_factory=dict)   # measured hit_rate etc. once known
+    fill: str = "next_open"            # one of FILLS
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -141,7 +146,7 @@ class StrategySpec:
             sizing=dict(d.get("sizing", {})), search_space=dict(d.get("search_space", {})),
             provenance=dict(d.get("provenance", {})), status=d.get("status", "proposed"),
             hypothesis=d.get("hypothesis", ""), family=d.get("family", "other"),
-            stats=dict(d.get("stats", {}) or {}), raw=d,
+            stats=dict(d.get("stats", {}) or {}), fill=d.get("fill", "next_open"), raw=d,
         )
 
     @classmethod
@@ -178,6 +183,8 @@ class StrategySpec:
                 errs.append(f"timeframe {k}={tf} unknown")
         if "signal" not in self.timeframes:
             errs.append("timeframes.signal is required")
+        if self.fill not in FILLS:
+            errs.append(f"fill must be one of {FILLS}")
         if self.status not in STATUSES:
             errs.append(f"status must be one of {STATUSES}")
         from tradex.core.records import FAMILIES

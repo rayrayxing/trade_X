@@ -1,0 +1,23 @@
+id: etf-pre-fomc-drift-d1
+version: 1
+asset_class: stocks
+family: event_drift
+hypothesis: "Pre-registered 2026-10-05, before any run. Same hypothesis as etf-pre-fomc-drift-h1 (Lucca and Moench 2015): US equity returns concentrate ahead of scheduled FOMC statements. On daily bars back to 2006 so the out-of-sample window holds about 100 meetings: buy at the close of the session before the statement day and sell at the statement day's close (the 14:00 or 14:15 statement, so the window also holds the first two hours of the reaction). Both are market-on-close orders placed a session ahead from the published FOMC schedule (fill: next_close); no price enters the decision. Universe: the four index ETFs and the nine original sector SPDRs, every ETF in the pool that tracks US equities and trades from 2006. Expected: profit factor above 1.2 out of sample, positive in most folds. Search space is the H1 version's (stop distance only); trials are counted together with etf-pre-fomc-drift-h1."
+universe: [SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB]
+timeframes: {signal: D1}
+fill: next_close
+features:
+  enter: {fn: data.column, name: evt_enter}
+  leave: {fn: data.column, name: evt_leave}
+entry:
+  long: "enter > 0"
+exit:
+  stop_atr: 4.0
+  target_r: 6.0
+  max_bars: 2
+  long_when: "leave > 0"
+holding: {expected_hours: 24}
+sizing: {model: kelly_fraction, cap_risk_pct: 1}
+search_space: {stop_atr: [3.0, 6.0]}
+provenance: {source: "catalog: pre-FOMC announcement drift, daily close-to-close form (research round 3)", author: claude, created: 2026-10-05, shares_trials_with: [etf-pre-fomc-drift-h1]}
+status: proposed

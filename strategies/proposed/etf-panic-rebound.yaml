@@ -18,5 +18,5 @@ exit:
 holding: {expected_hours: 1440}
 sizing: {model: kelly_fraction, cap_risk_pct: 2}
 search_space: {stop_atr: [3.0, 5.0], target_r: [2.0, 4.0]}
-provenance: {source: "catalog: buy equity after a VIX spike above 30 (realised-volatility form)", author: claude, created: 2026-10-04}
+provenance: {source: "catalog: buy equity after a VIX spike above 30 (realised-volatility form)", author: claude, created: 2026-10-04, shares_trials_with: [etf-panic-rebound-pool22, etf-panic-rebound-pool34, etf-vix-panic-rebound, etf-vix-panic-rebound-pool22, etf-vix-panic-rebound-pool34]}
 status: proposed

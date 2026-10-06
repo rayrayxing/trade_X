@@ -1,6 +1,6 @@
 {
  "meta": {
-  "run_at": "2026-10-05 09:18 UTC",
+  "run_at": "2026-10-05 07:53 UTC",
   "thresholds": {
    "min_trades": 100,
    "min_profit_factor": 1.2,
@@ -22,7 +22,7 @@
    "risk_pct": 1.0,
    "max_leverage": 1.0
   },
-  "universe": "screened at every walk-forward test-fold start (and yearly before the first) from a pool of 102 stocks (the S&P 100 as of Oct 2026 plus the first run's names) and 22 ETFs; top 30 stocks, 10 ETFs, or 30 of both, ranked by trailing 60-day median dollar volume using bars before the screen date only. The panic-rebound pool variants take every ETF listed at the screen date: all of the 22-ETF pool, or of a 34-ETF pool that adds 12 equity ETFs.",
+  "universe": "screened at every walk-forward test-fold start (and yearly before the first) from a pool of 102 stocks (the S&P 100 as of Oct 2026 plus the first run's names) and 22 ETFs; top 30 stocks, 10 ETFs, or 30 of both, ranked by trailing 60-day median dollar volume using bars before the screen date only.",
   "earnings_coverage": {
    "symbols": 102,
    "reports_by_source": {
@@ -37,12 +37,13 @@
    ]
   },
   "changes": [
-   "Pre-FOMC drift on daily bars back to 2006 (`etf-pre-fomc-drift-d1`, new): the H1 hypothesis held close to close, from the close of the session before the statement day to the statement day's close, on the four index ETFs and the nine original sector SPDRs. Both orders are market-on-close orders placed a session ahead (new engine option `fill: next_close`), decided from the published FOMC schedule only. The H1 version runs as before; the two count their trials together.",
-   "Panic rebound on more ETFs (four new pre-registered variants, rules and search space unchanged): `-pool22` runs on every ETF of the 22-ETF pool listed at each screen date, `-pool34` adds 12 liquid equity ETFs downloaded for this round (SMH, XBI, KRE, ITB, XHB, XOP, XRT, IBB, EWJ, EWZ, FXI, VWO; daily bars, OpenD history quota 124 -> 136 of 300). All six panic-rebound specs count their trials together.",
-   "DSR's N can now span specs that test one hypothesis (`provenance.shares_trials_with`): the pre-FOMC pair and the six panic-rebound specs. This raises N for the run-3 versions of those strategies.",
-   "Near misses (every rung passed except the deflated Sharpe) get a report-only robustness block: results since 2016, each fold's test window rerun with doubled spread and slippage at the parameters it chose, and a stationary-bootstrap interval of the out-of-sample Sharpe. Nothing about these strategies was changed.",
-   "Gate thresholds are unchanged (config/gates/thresholds.yaml is not touched).",
-   "Trial ledger kept: every parameter set run here is added, so N grows for re-run strategies."
+   "Merged with the proposed-strategy work: the 11 strategies in strategies/proposed/ run here, built by tradex.research.builders from injected calendars and rate histories. The three stock ones run on the same liquidity screen as the seeds; the ETF ones keep their full index/sector-SPDR universe.",
+   "Policy rates for all eight currencies from the central banks' own data (FRED for the Fed, ECB, BoE, RBA, BoC Valet, SNB data portal; BoJ and RBNZ via the BIS policy-rate dataset), cached in data/cache/macro. The carry features and FX financing read this one file. CAD, CHF and NZD pairs now run, financed.",
+   "The bundled cost table tradex/costs/policy_rates.csv is rebuilt from the same official series (the old one was written from memory: it missed the 2026 ECB, RBA and Fed moves and dated RBA changes a day early).",
+   "Scheduled FOMC meetings 2006-2027 from federalreserve.gov feed the pre-FOMC drift strategy; Cboe VIX daily history feeds `etf-vix-panic-rebound`, the literal VIX>30 form of the panic-rebound entry (new).",
+   "Earnings strategies from the proposals read the run-2 earnings calendar (OpenD release dates and timing, SEC filing-date proxies before that).",
+   "30-minute OpenD bars for the 22 ETFs (no new history quota: 124 of 300 still used): `etf-intraday-momentum-m30` takes the first half hour as its signal and enters at 15:30 (new).",
+   "Trial ledger: every parameter set of every variant run here is recorded, so N grows for re-run strategies."
   ],
   "caveats": [
    "Survivorship bias remains: the candidate pool is today's S&P 100 and today's ETFs. OpenD has no delisted names, so stocks that left the index or failed since 2006 can never be picked by the screen. Results on screened universes are less hand-picked than the first run, not survivorship-free.",
@@ -54,11 +55,10 @@
    "FX seeds' no_high_impact_news_30m filter is inactive: there is no historical macro calendar before 2026.",
    "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
    "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
-   "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years. Of the 12 round-3 ETFs, OpenD serves daily bars from 2006 only for XRT, IBB, EWZ and FXI; the other eight start in 2012 (their own listings are older), so the point-in-time screen admits them from 2012.",
-   "The daily pre-FOMC flags assume the exchange calendar is known in advance (it is published years ahead): the backtest reads it from the bars. Scheduled meetings only; the March 2020 meeting, replaced by the 15 March emergency cut, is not in the calendar, so no trade was planned for it. The statement-day close includes about two hours of reaction after the 14:00 (14:15 before 2013) statement.",
+   "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years.",
    "DSR's N is every parameter set ever recorded for the strategy in the trial ledger, across all variants."
   ],
-  "previous_run": "research/results/phase1_gate_run3.json"
+  "previous_run": "research/results/phase1_gate_run2.json"
  },
  "rows": [
   {
@@ -134,7 +134,6 @@
       "features.lo55.period": 43
      },
      "test_return": -0.128,
-     "test_sharpe": -2.244,
      "trades": 181
     },
     {
@@ -145,7 +144,6 @@
       "features.lo55.period": 43
      },
      "test_return": -0.016,
-     "test_sharpe": -0.147,
      "trades": 229
     },
     {
@@ -156,7 +154,6 @@
       "features.lo55.period": 32
      },
      "test_return": -0.041,
-     "test_sharpe": -0.417,
      "trades": 129
     },
     {
@@ -167,7 +164,6 @@
       "features.lo55.period": 55
      },
      "test_return": 0.011,
-     "test_sharpe": 0.157,
      "trades": 185
     },
     {
@@ -178,7 +174,6 @@
       "features.lo55.period": 55
      },
      "test_return": -0.064,
-     "test_sharpe": -1.027,
      "trades": 158
     }
    ],
@@ -215,7 +210,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 467.3
+   "seconds": 330.2
   },
   {
    "catalog_id": "ema-pullback-swing-seed",
@@ -813,7 +808,6 @@
       "target_r": 2.1667
      },
      "test_return": -0.135,
-     "test_sharpe": -0.453,
      "trades": 417
     },
     {
@@ -823,7 +817,6 @@
       "target_r": 2.1667
      },
      "test_return": -0.14,
-     "test_sharpe": -0.51,
      "trades": 446
     },
     {
@@ -833,7 +826,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.329,
-     "test_sharpe": 0.92,
      "trades": 477
     },
     {
@@ -843,7 +835,6 @@
       "target_r": 2.1667
      },
      "test_return": -0.082,
-     "test_sharpe": -0.25,
      "trades": 341
     },
     {
@@ -853,7 +844,6 @@
       "target_r": 2.1667
      },
      "test_return": -0.0,
-     "test_sharpe": 0.057,
      "trades": 451
     }
    ],
@@ -890,7 +880,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 123.2
+   "seconds": 92.8
   },
   {
    "catalog_id": "macd-trend-with-candle-confirmation-seed",
@@ -1485,7 +1475,6 @@
       "target_r": 3.0
      },
      "test_return": -0.208,
-     "test_sharpe": -2.016,
      "trades": 59
     },
     {
@@ -1495,7 +1484,6 @@
       "target_r": 3.0
      },
      "test_return": 0.197,
-     "test_sharpe": 1.369,
      "trades": 63
     },
     {
@@ -1505,7 +1493,6 @@
       "target_r": 3.0
      },
      "test_return": 0.084,
-     "test_sharpe": 0.564,
      "trades": 62
     },
     {
@@ -1515,7 +1502,6 @@
       "target_r": 3.0
      },
      "test_return": -0.065,
-     "test_sharpe": -0.538,
      "trades": 55
     },
     {
@@ -1525,7 +1511,6 @@
       "target_r": 3.0
      },
      "test_return": -0.186,
-     "test_sharpe": -1.275,
      "trades": 61
     }
    ],
@@ -1562,7 +1547,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 88.5
+   "seconds": 68.8
   },
   {
    "catalog_id": "trend-pullback-with-engulfing-candle-seed",
@@ -1632,7 +1617,6 @@
       "target_r": 2.0
      },
      "test_return": -0.042,
-     "test_sharpe": -0.629,
      "trades": 354
     },
     {
@@ -1642,7 +1626,6 @@
       "target_r": 2.0
      },
      "test_return": -0.175,
-     "test_sharpe": -1.856,
      "trades": 363
     },
     {
@@ -1652,7 +1635,6 @@
       "target_r": 2.0
      },
      "test_return": -0.024,
-     "test_sharpe": -0.283,
      "trades": 360
     },
     {
@@ -1662,7 +1644,6 @@
       "target_r": 2.0
      },
      "test_return": -0.019,
-     "test_sharpe": -0.199,
      "trades": 356
     },
     {
@@ -1672,7 +1653,6 @@
       "target_r": 2.0
      },
      "test_return": -0.085,
-     "test_sharpe": -1.395,
      "trades": 349
     }
    ],
@@ -1713,7 +1693,7 @@
     "GBP_USD: no_high_impact_news_30m: no event calendar supplied, filter inactive",
     "USD_JPY: no_high_impact_news_30m: no event calendar supplied, filter inactive"
    ],
-   "seconds": 364.8
+   "seconds": 224.6
   },
   {
    "catalog_id": "rsi-2-pullback-in-uptrend-seed",
@@ -1960,7 +1940,6 @@
       "features.ema200.period": 100
      },
      "test_return": 0.018,
-     "test_sharpe": 0.168,
      "trades": 125
     },
     {
@@ -1970,7 +1949,6 @@
       "features.ema200.period": 100
      },
      "test_return": -0.093,
-     "test_sharpe": -0.671,
      "trades": 136
     },
     {
@@ -1980,7 +1958,6 @@
       "features.ema200.period": 133
      },
      "test_return": 0.008,
-     "test_sharpe": 0.087,
      "trades": 164
     },
     {
@@ -1990,7 +1967,6 @@
       "features.ema200.period": 133
      },
      "test_return": -0.003,
-     "test_sharpe": -0.021,
      "trades": 107
     },
     {
@@ -2000,7 +1976,6 @@
       "features.ema200.period": 133
      },
      "test_return": 0.111,
-     "test_sharpe": 1.032,
      "trades": 183
     }
    ],
@@ -2037,7 +2012,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 27.4
+   "seconds": 16.6
   },
   {
    "catalog_id": "rsi-range-reversion-seed",
@@ -2105,7 +2080,6 @@
       "features.rsi.period": 16
      },
      "test_return": 0.003,
-     "test_sharpe": 0.395,
      "trades": 7
     },
     {
@@ -2115,7 +2089,6 @@
       "features.rsi.period": 16
      },
      "test_return": -0.003,
-     "test_sharpe": -0.233,
      "trades": 13
     },
     {
@@ -2125,7 +2098,6 @@
       "features.rsi.period": 16
      },
      "test_return": -0.001,
-     "test_sharpe": -0.079,
      "trades": 10
     },
     {
@@ -2135,7 +2107,6 @@
       "features.rsi.period": 16
      },
      "test_return": -0.009,
-     "test_sharpe": -1.001,
      "trades": 11
     },
     {
@@ -2145,7 +2116,6 @@
       "features.rsi.period": 16
      },
      "test_return": 0.001,
-     "test_sharpe": 0.202,
      "trades": 9
     }
    ],
@@ -2186,7 +2156,7 @@
     "AUD_USD: no_high_impact_news_30m: no event calendar supplied, filter inactive",
     "EUR_JPY: no_high_impact_news_30m: no event calendar supplied, filter inactive"
    ],
-   "seconds": 55.2
+   "seconds": 42.2
   },
   {
    "catalog_id": "breakout-with-volume-seed",
@@ -2196,43 +2166,6 @@
    "spec": "strategies/seeds/stk-breakout-volume.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 592,
-     "profit_factor": 1.459,
-     "sharpe": 0.86,
-     "total_return": 1.06,
-     "max_drawdown": -0.138
-    },
-    "costs_x2_fixed_params": {
-     "trades": 655,
-     "profit_factor": 1.353,
-     "sharpe": 0.674,
-     "total_return": 0.851,
-     "max_drawdown": -0.143,
-     "folds_profitable": "5/5",
-     "fold_returns": [
-      0.039,
-      0.017,
-      0.42,
-      0.113,
-      0.108
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": 0.291,
-      "p50": 0.736,
-      "p95": 1.186
-     },
-     "p_sharpe_le_0": 0.005
-    },
-    "param_stability": 0.6,
-    "expected_max_sharpe": 0.357
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -2806,7 +2739,6 @@
       "features.relvol.period": 23
      },
      "test_return": 0.054,
-     "test_sharpe": 0.376,
      "trades": 120
     },
     {
@@ -2816,7 +2748,6 @@
       "features.relvol.period": 30
      },
      "test_return": 0.031,
-     "test_sharpe": 0.218,
      "trades": 133
     },
     {
@@ -2826,7 +2757,6 @@
       "features.relvol.period": 30
      },
      "test_return": 0.438,
-     "test_sharpe": 1.397,
      "trades": 164
     },
     {
@@ -2836,7 +2766,6 @@
       "features.relvol.period": 30
      },
      "test_return": 0.122,
-     "test_sharpe": 0.711,
      "trades": 110
     },
     {
@@ -2846,7 +2775,6 @@
       "features.relvol.period": 30
      },
      "test_return": 0.123,
-     "test_sharpe": 0.655,
      "trades": 131
     }
    ],
@@ -2883,7 +2811,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 94.8
+   "seconds": 66.8
   },
   {
    "catalog_id": "double-bottom-breakout-seed",
@@ -3466,7 +3394,6 @@
       "features.dbl.k_atr": 3.0
      },
      "test_return": 0.103,
-     "test_sharpe": 0.626,
      "trades": 65
     },
     {
@@ -3476,7 +3403,6 @@
       "features.dbl.k_atr": 3.0
      },
      "test_return": 0.072,
-     "test_sharpe": 0.44,
      "trades": 76
     },
     {
@@ -3486,7 +3412,6 @@
       "features.dbl.k_atr": 3.0
      },
      "test_return": -0.033,
-     "test_sharpe": -0.249,
      "trades": 57
     },
     {
@@ -3496,7 +3421,6 @@
       "features.dbl.k_atr": 3.0
      },
      "test_return": 0.046,
-     "test_sharpe": 0.321,
      "trades": 71
     },
     {
@@ -3506,7 +3430,6 @@
       "features.dbl.k_atr": 3.0
      },
      "test_return": -0.047,
-     "test_sharpe": -0.385,
      "trades": 62
     }
    ],
@@ -3543,7 +3466,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 92.0
+   "seconds": 73.5
   },
   {
    "catalog_id": "52-week-high-momentum",
@@ -4131,7 +4054,6 @@
       "target_r": 4.0
      },
      "test_return": -0.001,
-     "test_sharpe": 0.054,
      "trades": 448
     },
     {
@@ -4141,7 +4063,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.002,
-     "test_sharpe": 0.056,
      "trades": 453
     },
     {
@@ -4151,7 +4072,6 @@
       "target_r": 2.6667
      },
      "test_return": 0.204,
-     "test_sharpe": 0.629,
      "trades": 478
     },
     {
@@ -4161,7 +4081,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.028,
-     "test_sharpe": -0.077,
      "trades": 331
     },
     {
@@ -4171,7 +4090,6 @@
       "target_r": 2.6667
      },
      "test_return": 0.167,
-     "test_sharpe": 0.653,
      "trades": 426
     }
    ],
@@ -4208,7 +4126,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 108.5
+   "seconds": 91.9
   },
   {
    "catalog_id": "relative-strength-vs-sector",
@@ -4796,7 +4714,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.107,
-     "test_sharpe": 0.369,
      "trades": 501
     },
     {
@@ -4806,7 +4723,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.138,
-     "test_sharpe": 0.443,
      "trades": 511
     },
     {
@@ -4816,7 +4732,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.29,
-     "test_sharpe": 0.677,
      "trades": 559
     },
     {
@@ -4826,7 +4741,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.01,
-     "test_sharpe": 0.102,
      "trades": 541
     },
     {
@@ -4836,7 +4750,6 @@
       "target_r": 2.1667
      },
      "test_return": 0.345,
-     "test_sharpe": 0.965,
      "trades": 570
     }
    ],
@@ -4873,7 +4786,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 119.0
+   "seconds": 81.9
   },
   {
    "catalog_id": "pairs-trading-distance-and-cointegration",
@@ -5389,7 +5302,6 @@
       "max_bars": 20
      },
      "test_return": -0.072,
-     "test_sharpe": -0.83,
      "trades": 157
     },
     {
@@ -5399,7 +5311,6 @@
       "max_bars": 17
      },
      "test_return": -0.071,
-     "test_sharpe": -0.756,
      "trades": 113
     },
     {
@@ -5409,7 +5320,6 @@
       "max_bars": 17
      },
      "test_return": -0.293,
-     "test_sharpe": -2.561,
      "trades": 221
     },
     {
@@ -5419,7 +5329,6 @@
       "max_bars": 20
      },
      "test_return": -0.117,
-     "test_sharpe": -1.681,
      "trades": 138
     },
     {
@@ -5429,7 +5338,6 @@
       "max_bars": 17
      },
      "test_return": -0.006,
-     "test_sharpe": -0.033,
      "trades": 155
     }
    ],
@@ -5466,7 +5374,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 37.2
+   "seconds": 30.0
   },
   {
    "catalog_id": "gap-and-go-after-news-gap",
@@ -5901,7 +5809,6 @@
       "target_r": 1.0
      },
      "test_return": -0.245,
-     "test_sharpe": -2.207,
      "trades": 381
     },
     {
@@ -5911,7 +5818,6 @@
       "target_r": 1.0
      },
      "test_return": -0.017,
-     "test_sharpe": -0.194,
      "trades": 193
     },
     {
@@ -5921,7 +5827,6 @@
       "target_r": 1.0
      },
      "test_return": 0.008,
-     "test_sharpe": 0.15,
      "trades": 205
     },
     {
@@ -5931,7 +5836,6 @@
       "target_r": 1.6667
      },
      "test_return": -0.171,
-     "test_sharpe": -1.546,
      "trades": 224
     },
     {
@@ -5941,7 +5845,6 @@
       "target_r": 1.6667
      },
      "test_return": -0.213,
-     "test_sharpe": -1.987,
      "trades": 298
     }
    ],
@@ -5978,7 +5881,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 158.2
+   "seconds": 141.8
   },
   {
    "catalog_id": "overnight-vs-intraday-return-split",
@@ -6171,7 +6074,6 @@
       "stop_atr": 2.0
      },
      "test_return": -0.453,
-     "test_sharpe": -3.384,
      "trades": 434
     },
     {
@@ -6180,7 +6082,6 @@
       "stop_atr": 2.0
      },
      "test_return": -0.23,
-     "test_sharpe": -3.283,
      "trades": 468
     },
     {
@@ -6189,7 +6090,6 @@
       "stop_atr": 2.0
      },
      "test_return": -0.153,
-     "test_sharpe": -2.464,
      "trades": 559
     },
     {
@@ -6198,7 +6098,6 @@
       "stop_atr": 2.0
      },
      "test_return": -0.202,
-     "test_sharpe": -2.111,
      "trades": 461
     },
     {
@@ -6207,7 +6106,6 @@
       "stop_atr": 2.0
      },
      "test_return": -0.121,
-     "test_sharpe": -1.489,
      "trades": 500
     }
    ],
@@ -6244,7 +6142,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 16.1
+   "seconds": 13.1
   },
   {
    "catalog_id": "joint-time-series-and-cross-sectional-strategy",
@@ -6254,43 +6152,6 @@
    "spec": "research/specs/etf-ts-xs-momentum.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 904,
-     "profit_factor": 1.312,
-     "sharpe": 0.595,
-     "total_return": 0.773,
-     "max_drawdown": -0.186
-    },
-    "costs_x2_fixed_params": {
-     "trades": 1039,
-     "profit_factor": 1.154,
-     "sharpe": 0.317,
-     "total_return": 0.37,
-     "max_drawdown": -0.257,
-     "folds_profitable": "3/5",
-     "fold_returns": [
-      -0.166,
-      -0.003,
-      0.325,
-      0.005,
-      0.236
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": 0.045,
-      "p50": 0.521,
-      "p95": 0.987
-     },
-     "p_sharpe_le_0": 0.035
-    },
-    "param_stability": 0.8,
-    "expected_max_sharpe": 0.218
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -6529,7 +6390,6 @@
       "target_r": 2.0
      },
      "test_return": -0.115,
-     "test_sharpe": -0.592,
      "trades": 244
     },
     {
@@ -6539,7 +6399,6 @@
       "target_r": 2.0
      },
      "test_return": 0.111,
-     "test_sharpe": 0.453,
      "trades": 216
     },
     {
@@ -6549,7 +6408,6 @@
       "target_r": 2.0
      },
      "test_return": 0.361,
-     "test_sharpe": 1.206,
      "trades": 212
     },
     {
@@ -6559,7 +6417,6 @@
       "target_r": 2.0
      },
      "test_return": 0.018,
-     "test_sharpe": 0.13,
      "trades": 142
     },
     {
@@ -6569,7 +6426,6 @@
       "target_r": 2.0
      },
      "test_return": 0.259,
-     "test_sharpe": 1.075,
      "trades": 218
     }
    ],
@@ -6606,7 +6462,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 44.5
+   "seconds": 25.1
   },
   {
    "catalog_id": "joint-time-series-and-cross-sectional-strategy",
@@ -6687,7 +6543,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.154,
-     "test_sharpe": -2.995,
      "trades": 629
     },
     {
@@ -6697,7 +6552,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.141,
-     "test_sharpe": -2.176,
      "trades": 617
     },
     {
@@ -6707,7 +6561,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.106,
-     "test_sharpe": -1.724,
      "trades": 421
     },
     {
@@ -6717,7 +6570,6 @@
       "target_r": 3.3333
      },
      "test_return": -0.226,
-     "test_sharpe": -3.474,
      "trades": 505
     },
     {
@@ -6727,7 +6579,6 @@
       "target_r": 2.0
      },
      "test_return": -0.104,
-     "test_sharpe": -1.562,
      "trades": 372
     }
    ],
@@ -6764,7 +6615,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 142.6
+   "seconds": 89.4
   },
   {
    "catalog_id": "intraday-momentum-first-half-hour-predicts-last",
@@ -6963,7 +6814,6 @@
       "stop_atr": 1.0
      },
      "test_return": -0.997,
-     "test_sharpe": -10.858,
      "trades": 2079
     },
     {
@@ -6972,7 +6822,6 @@
       "stop_atr": 1.0
      },
      "test_return": -0.997,
-     "test_sharpe": -13.649,
      "trades": 2168
     },
     {
@@ -6981,7 +6830,6 @@
       "stop_atr": 1.0
      },
      "test_return": -0.996,
-     "test_sharpe": -16.173,
      "trades": 2186
     },
     {
@@ -6990,7 +6838,6 @@
       "stop_atr": 1.0
      },
      "test_return": -0.995,
-     "test_sharpe": -15.492,
      "trades": 2102
     },
     {
@@ -6999,7 +6846,6 @@
       "stop_atr": 1.0
      },
      "test_return": -0.994,
-     "test_sharpe": -19.398,
      "trades": 2110
     }
    ],
@@ -7036,7 +6882,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 21.6
+   "seconds": 14.0
   },
   {
    "catalog_id": "intraday-momentum-first-half-hour-predicts-last",
@@ -7236,7 +7082,6 @@
       "stop_atr": 1.6667
      },
      "test_return": -0.997,
-     "test_sharpe": -11.487,
      "trades": 1934
     },
     {
@@ -7245,7 +7090,6 @@
       "stop_atr": 1.6667
      },
      "test_return": -0.997,
-     "test_sharpe": -12.801,
      "trades": 2130
     },
     {
@@ -7254,7 +7098,6 @@
       "stop_atr": 1.6667
      },
      "test_return": -0.992,
-     "test_sharpe": -15.344,
      "trades": 2275
     },
     {
@@ -7263,7 +7106,6 @@
       "stop_atr": 1.6667
      },
      "test_return": -0.996,
-     "test_sharpe": -16.715,
      "trades": 2041
     },
     {
@@ -7272,7 +7114,6 @@
       "stop_atr": 1.6667
      },
      "test_return": -0.995,
-     "test_sharpe": -20.178,
      "trades": 2017
     }
    ],
@@ -7309,7 +7150,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 33.0
+   "seconds": 22.4
   },
   {
    "catalog_id": "earnings-day-jump-continuation",
@@ -7319,43 +7160,6 @@
    "spec": "research/specs/stk-earnings-jump.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 206,
-     "profit_factor": 1.327,
-     "sharpe": 0.498,
-     "total_return": 0.29,
-     "max_drawdown": -0.063
-    },
-    "costs_x2_fixed_params": {
-     "trades": 231,
-     "profit_factor": 1.242,
-     "sharpe": 0.377,
-     "total_return": 0.225,
-     "max_drawdown": -0.07,
-     "folds_profitable": "4/5",
-     "fold_returns": [
-      -0.05,
-      0.049,
-      0.047,
-      0.045,
-      0.124
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": -0.028,
-      "p50": 0.41,
-      "p95": 0.847
-     },
-     "p_sharpe_le_0": 0.065
-    },
-    "param_stability": 0.4,
-    "expected_max_sharpe": 0.268
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -7907,7 +7711,6 @@
       "max_bars": 10
      },
      "test_return": -0.047,
-     "test_sharpe": -0.984,
      "trades": 48
     },
     {
@@ -7917,7 +7720,6 @@
       "max_bars": 20
      },
      "test_return": 0.055,
-     "test_sharpe": 0.518,
      "trades": 40
     },
     {
@@ -7927,7 +7729,6 @@
       "max_bars": 40
      },
      "test_return": 0.049,
-     "test_sharpe": 0.465,
      "trades": 20
     },
     {
@@ -7937,7 +7738,6 @@
       "max_bars": 20
      },
      "test_return": 0.049,
-     "test_sharpe": 0.477,
      "trades": 65
     },
     {
@@ -7947,7 +7747,6 @@
       "max_bars": 40
      },
      "test_return": 0.129,
-     "test_sharpe": 0.74,
      "trades": 57
     }
    ],
@@ -7984,7 +7783,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 76.7
+   "seconds": 53.4
   },
   {
    "catalog_id": "earnings-day-jump-continuation",
@@ -7994,43 +7793,6 @@
    "spec": "strategies/proposed/stk-earnings-jump-continuation.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 281,
-     "profit_factor": 1.277,
-     "sharpe": 0.504,
-     "total_return": 0.249,
-     "max_drawdown": -0.103
-    },
-    "costs_x2_fixed_params": {
-     "trades": 313,
-     "profit_factor": 1.205,
-     "sharpe": 0.393,
-     "total_return": 0.208,
-     "max_drawdown": -0.101,
-     "folds_profitable": "3/5",
-     "fold_returns": [
-      0.006,
-      -0.021,
-      0.087,
-      -0.007,
-      0.136
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": -0.001,
-      "p50": 0.451,
-      "p95": 0.898
-     },
-     "p_sharpe_le_0": 0.05
-    },
-    "param_stability": 1.0,
-    "expected_max_sharpe": 0.22
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -8593,7 +8355,6 @@
       "target_r": 1.5
      },
      "test_return": 0.016,
-     "test_sharpe": 0.189,
      "trades": 67
     },
     {
@@ -8603,7 +8364,6 @@
       "target_r": 1.5
      },
      "test_return": -0.024,
-     "test_sharpe": -0.202,
      "trades": 60
     },
     {
@@ -8613,7 +8373,6 @@
       "target_r": 1.5
      },
      "test_return": 0.095,
-     "test_sharpe": 0.887,
      "trades": 58
     },
     {
@@ -8623,7 +8382,6 @@
       "target_r": 1.5
      },
      "test_return": -0.001,
-     "test_sharpe": 0.007,
      "trades": 70
     },
     {
@@ -8633,7 +8391,6 @@
       "target_r": 1.5
      },
      "test_return": 0.148,
-     "test_sharpe": 1.36,
      "trades": 58
     }
    ],
@@ -8670,7 +8427,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 69.2
+   "seconds": 52.9
   },
   {
    "catalog_id": "post-earnings-announcement-drift",
@@ -9255,7 +9012,6 @@
       "target_r": 2.0
      },
      "test_return": 0.092,
-     "test_sharpe": 0.725,
      "trades": 95
     },
     {
@@ -9265,7 +9021,6 @@
       "target_r": 2.0
      },
      "test_return": -0.056,
-     "test_sharpe": -0.415,
      "trades": 94
     },
     {
@@ -9275,7 +9030,6 @@
       "target_r": 2.0
      },
      "test_return": 0.076,
-     "test_sharpe": 0.491,
      "trades": 92
     },
     {
@@ -9285,7 +9039,6 @@
       "target_r": 2.0
      },
      "test_return": -0.056,
-     "test_sharpe": -0.528,
      "trades": 94
     },
     {
@@ -9295,7 +9048,6 @@
       "target_r": 2.0
      },
      "test_return": 0.019,
-     "test_sharpe": 0.177,
      "trades": 88
     }
    ],
@@ -9332,7 +9084,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 82.7
+   "seconds": 65.7
   },
   {
    "catalog_id": "pre-fomc-announcement-drift",
@@ -9394,7 +9146,6 @@
       "stop_atr": 3.0
      },
      "test_return": 0.054,
-     "test_sharpe": 1.637,
      "trades": 26
     },
     {
@@ -9403,7 +9154,6 @@
       "stop_atr": 3.0
      },
      "test_return": 0.019,
-     "test_sharpe": 1.567,
      "trades": 19
     },
     {
@@ -9412,7 +9162,6 @@
       "stop_atr": 3.0
      },
      "test_return": 0.018,
-     "test_sharpe": 0.802,
      "trades": 15
     },
     {
@@ -9421,7 +9170,6 @@
       "stop_atr": 3.0
      },
      "test_return": 0.004,
-     "test_sharpe": 0.365,
      "trades": 18
     },
     {
@@ -9430,7 +9178,6 @@
       "stop_atr": 3.0
      },
      "test_return": -0.028,
-     "test_sharpe": -1.92,
      "trades": 18
     }
    ],
@@ -9467,158 +9214,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 3.6
-  },
-  {
-   "catalog_id": "pre-fomc-announcement-drift",
-   "catalog_name": "Pre-FOMC announcement drift",
-   "catalog_status": "Build",
-   "strategy_id": "etf-pre-fomc-drift-d1",
-   "spec": "strategies/proposed/etf-pre-fomc-drift-d1.yaml",
-   "timeframe": "D1",
-   "market": "US stocks/ETFs (moomoo)",
-   "result": "fail",
-   "failing_rung": "profit_factor",
-   "failing": [
-    "profit_factor",
-    "deflated_sharpe"
-   ],
-   "reasons": [
-    "profit factor 0.82 after costs (need 1.2)",
-    "deflated Sharpe 0.06 (need 0.95)"
-   ],
-   "universe_rule": "spec universe",
-   "variant": null,
-   "symbols": [
-    "DIA",
-    "IWM",
-    "QQQ",
-    "SPY",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "missing_symbols": [],
-   "symbols_traded_oos": [
-    "DIA",
-    "IWM",
-    "QQQ",
-    "SPY",
-    "XLE",
-    "XLF",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "universe_by_date": {},
-   "bars_used": 58801,
-   "data_from": "2006-09-20",
-   "data_to": "2026-10-02",
-   "oos_trades": 551,
-   "profit_factor": 0.816,
-   "sharpe": -0.232,
-   "deflated_sharpe": 0.065,
-   "psr": 0.211,
-   "n_trials": 8,
-   "n_trials_this_run": 4,
-   "max_drawdown": -0.132,
-   "total_return": -0.088,
-   "win_rate": 0.392,
-   "costs_share_of_gross": 0.2,
-   "exit_reasons": {
-    "signal_exit": 547,
-    "stop": 4
-   },
-   "folds_profitable": "3/5",
-   "folds": [
-    {
-     "test": "2014-09-22..2017-02-15",
-     "params": {
-      "stop_atr": 3.0
-     },
-     "test_return": 0.002,
-     "test_sharpe": 0.051,
-     "trades": 98
-    },
-    {
-     "test": "2017-02-15..2019-07-15",
-     "params": {
-      "stop_atr": 3.0
-     },
-     "test_return": -0.044,
-     "test_sharpe": -1.001,
-     "trades": 91
-    },
-    {
-     "test": "2019-07-15..2021-12-06",
-     "params": {
-      "stop_atr": 3.0
-     },
-     "test_return": 0.008,
-     "test_sharpe": 0.122,
-     "trades": 107
-    },
-    {
-     "test": "2021-12-06..2024-05-03",
-     "params": {
-      "stop_atr": 3.0
-     },
-     "test_return": 0.007,
-     "test_sharpe": 0.09,
-     "trades": 140
-    },
-    {
-     "test": "2024-05-03..2026-10-02",
-     "params": {
-      "stop_atr": 3.0
-     },
-     "test_return": -0.062,
-     "test_sharpe": -0.852,
-     "trades": 115
-    }
-   ],
-   "checks": [
-    {
-     "rung": "trades",
-     "value": 551,
-     "need": 100,
-     "ok": true
-    },
-    {
-     "rung": "profit_factor",
-     "value": 0.8160075222821452,
-     "need": 1.2,
-     "ok": false
-    },
-    {
-     "rung": "deflated_sharpe",
-     "value": 0.06460851301918336,
-     "need": 0.95,
-     "ok": false
-    },
-    {
-     "rung": "max_drawdown",
-     "value": -0.13189453375641647,
-     "need": -0.5,
-     "ok": true
-    },
-    {
-     "rung": "folds_profitable",
-     "value": 0.6,
-     "need": 0.5,
-     "ok": true
-    }
-   ],
-   "warnings": [],
-   "seconds": 5.0
+   "seconds": 2.9
   },
   {
    "catalog_id": "hidden-markov-regime-allocation",
@@ -9628,43 +9224,6 @@
    "spec": "strategies/proposed/etf-risk-on-trend.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 1070,
-     "profit_factor": 1.306,
-     "sharpe": 0.456,
-     "total_return": 0.544,
-     "max_drawdown": -0.255
-    },
-    "costs_x2_fixed_params": {
-     "trades": 1209,
-     "profit_factor": 1.077,
-     "sharpe": 0.141,
-     "total_return": 0.116,
-     "max_drawdown": -0.268,
-     "folds_profitable": "2/5",
-     "fold_returns": [
-      -0.082,
-      -0.04,
-      0.289,
-      -0.093,
-      0.084
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": -0.138,
-      "p50": 0.324,
-      "p95": 0.785
-     },
-     "p_sharpe_le_0": 0.127
-    },
-    "param_stability": 0.6,
-    "expected_max_sharpe": 0.304
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -9741,7 +9300,6 @@
       "features.ema100.period": 117
      },
      "test_return": -0.087,
-     "test_sharpe": -0.336,
      "trades": 236
     },
     {
@@ -9752,7 +9310,6 @@
       "features.ema100.period": 150
      },
      "test_return": 0.01,
-     "test_sharpe": 0.092,
      "trades": 255
     },
     {
@@ -9763,7 +9320,6 @@
       "features.ema100.period": 150
      },
      "test_return": 0.346,
-     "test_sharpe": 1.08,
      "trades": 250
     },
     {
@@ -9774,7 +9330,6 @@
       "features.ema100.period": 150
      },
      "test_return": -0.08,
-     "test_sharpe": -0.36,
      "trades": 229
     },
     {
@@ -9785,7 +9340,6 @@
       "features.ema100.period": 150
      },
      "test_return": 0.213,
-     "test_sharpe": 0.86,
      "trades": 254
     }
    ],
@@ -9822,7 +9376,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 89.5
+   "seconds": 77.7
   },
   {
    "catalog_id": "realised-covariance-regime-detection",
@@ -9910,7 +9464,6 @@
       "features.ema100.period": 83
      },
      "test_return": -0.133,
-     "test_sharpe": -0.484,
      "trades": 266
     },
     {
@@ -9921,7 +9474,6 @@
       "features.ema100.period": 117
      },
      "test_return": 0.056,
-     "test_sharpe": 0.298,
      "trades": 219
     },
     {
@@ -9932,7 +9484,6 @@
       "features.ema100.period": 117
      },
      "test_return": 0.022,
-     "test_sharpe": 0.135,
      "trades": 239
     },
     {
@@ -9943,7 +9494,6 @@
       "features.ema100.period": 117
      },
      "test_return": 0.019,
-     "test_sharpe": 0.134,
      "trades": 207
     },
     {
@@ -9954,7 +9504,6 @@
       "features.ema100.period": 117
      },
      "test_return": -0.021,
-     "test_sharpe": -0.035,
      "trades": 307
     }
    ],
@@ -9991,7 +9540,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 75.3
+   "seconds": 58.1
   },
   {
    "catalog_id": "buy-equity-after-vix-spike-above-30",
@@ -10051,9 +9600,9 @@
    "oos_trades": 82,
    "profit_factor": 2.451,
    "sharpe": 0.348,
-   "deflated_sharpe": 0.847,
+   "deflated_sharpe": 0.853,
    "psr": 0.881,
-   "n_trials": 32,
+   "n_trials": 16,
    "n_trials_this_run": 16,
    "max_drawdown": -0.135,
    "total_return": 0.218,
@@ -10073,7 +9622,6 @@
       "target_r": 2.0
      },
      "test_return": 0.0,
-     "test_sharpe": 0.0,
      "trades": 0
     },
     {
@@ -10083,7 +9631,6 @@
       "target_r": 2.0
      },
      "test_return": 0.075,
-     "test_sharpe": 0.944,
      "trades": 10
     },
     {
@@ -10093,7 +9640,6 @@
       "target_r": 2.0
      },
      "test_return": -0.01,
-     "test_sharpe": -0.008,
      "trades": 30
     },
     {
@@ -10103,7 +9649,6 @@
       "target_r": 2.0
      },
      "test_return": 0.094,
-     "test_sharpe": 0.591,
      "trades": 32
     },
     {
@@ -10113,7 +9658,6 @@
       "target_r": 2.0
      },
      "test_return": 0.046,
-     "test_sharpe": 0.698,
      "trades": 10
     }
    ],
@@ -10132,7 +9676,7 @@
     },
     {
      "rung": "deflated_sharpe",
-     "value": 0.8473301676359961,
+     "value": 0.8525124234737176,
      "need": 0.95,
      "ok": false
     },
@@ -10150,7 +9694,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 18.4
+   "seconds": 11.5
   },
   {
    "catalog_id": "buy-equity-after-vix-spike-above-30",
@@ -10168,7 +9712,7 @@
    ],
    "reasons": [
     "only 97 out-of-sample trades (need 100)",
-    "deflated Sharpe 0.78 (need 0.95)"
+    "deflated Sharpe 0.79 (need 0.95)"
    ],
    "universe_rule": "spec universe",
    "variant": null,
@@ -10210,9 +9754,9 @@
    "oos_trades": 97,
    "profit_factor": 1.77,
    "sharpe": 0.273,
-   "deflated_sharpe": 0.784,
+   "deflated_sharpe": 0.79,
    "psr": 0.824,
-   "n_trials": 32,
+   "n_trials": 16,
    "n_trials_this_run": 16,
    "max_drawdown": -0.139,
    "total_return": 0.178,
@@ -10234,7 +9778,6 @@
       "target_r": 2.0
      },
      "test_return": 0.0,
-     "test_sharpe": 0.0,
      "trades": 0
     },
     {
@@ -10244,7 +9787,6 @@
       "target_r": 2.0
      },
      "test_return": 0.051,
-     "test_sharpe": 0.738,
      "trades": 10
     },
     {
@@ -10254,7 +9796,6 @@
       "target_r": 2.0
      },
      "test_return": -0.016,
-     "test_sharpe": -0.039,
      "trades": 31
     },
     {
@@ -10264,7 +9805,6 @@
       "target_r": 2.0
      },
      "test_return": 0.112,
-     "test_sharpe": 0.556,
      "trades": 45
     },
     {
@@ -10274,7 +9814,6 @@
       "target_r": 2.0
      },
      "test_return": 0.026,
-     "test_sharpe": 0.466,
      "trades": 11
     }
    ],
@@ -10293,7 +9832,7 @@
     },
     {
      "rung": "deflated_sharpe",
-     "value": 0.7843979694296845,
+     "value": 0.7903826111799925,
      "need": 0.95,
      "ok": false
     },
@@ -10311,2048 +9850,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 15.9
-  },
-  {
-   "catalog_id": "buy-equity-after-vix-spike-above-30",
-   "catalog_name": "Buy equity after VIX spike above 30",
-   "catalog_status": "Screened: positive",
-   "strategy_id": "etf-panic-rebound-pool22",
-   "spec": "strategies/proposed/etf-panic-rebound-pool22.yaml",
-   "timeframe": "D1",
-   "market": "US stocks/ETFs (moomoo)",
-   "result": "fail",
-   "failing_rung": "trades",
-   "failing": [
-    "trades",
-    "deflated_sharpe"
-   ],
-   "reasons": [
-    "only 83 out-of-sample trades (need 100)",
-    "deflated Sharpe 0.86 (need 0.95)"
-   ],
-   "universe_rule": "top 22 of 22 etfs by trailing 60-day median dollar volume, re-screened at 13 dates",
-   "variant": "top22-etfs-adv60",
-   "symbols": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "GLD",
-    "HYG",
-    "IEF",
-    "IWM",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "missing_symbols": [],
-   "symbols_traded_oos": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "GLD",
-    "HYG",
-    "IEF",
-    "IWM",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "universe_by_date": {
-    "2006-12-14": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "XLE",
-     "DIA",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLB",
-     "TLT",
-     "XLI",
-     "IEF"
-    ],
-    "2007-12-14": [
-     "QQQ",
-     "IWM",
-     "SPY",
-     "EEM",
-     "DIA",
-     "XLF",
-     "XLE",
-     "GLD",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IEF"
-    ],
-    "2008-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "DIA",
-     "EEM",
-     "XLE",
-     "XLF",
-     "GLD",
-     "TLT",
-     "IEF"
-    ],
-    "2009-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "XLF",
-     "DIA",
-     "XLE",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IEF"
-    ],
-    "2010-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "GLD",
-     "EEM",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "XLI",
-     "XLB",
-     "IEF"
-    ],
-    "2011-12-13": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "XLI",
-     "XLB",
-     "XLV",
-     "IEF"
-    ],
-    "2012-12-12": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "TLT",
-     "XLF",
-     "EFA",
-     "DIA",
-     "XLE",
-     "XLI",
-     "SLV",
-     "XLK",
-     "XLB",
-     "HYG",
-     "IEF",
-     "XLV",
-     "XLY",
-     "XLU",
-     "LQD",
-     "XLP",
-     "VNQ"
-    ],
-    "2013-12-12": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "DIA",
-     "EFA",
-     "XLF",
-     "TLT",
-     "XLE",
-     "XLI",
-     "XLY",
-     "XLU",
-     "XLV",
-     "XLP",
-     "XLK",
-     "XLB",
-     "HYG",
-     "SLV",
-     "VNQ",
-     "LQD",
-     "IEF"
-    ],
-    "2014-09-22": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "TLT",
-     "EFA",
-     "XLE",
-     "DIA",
-     "XLF",
-     "XLI",
-     "XLV",
-     "XLU",
-     "XLK",
-     "XLY",
-     "HYG",
-     "XLB",
-     "XLP",
-     "VNQ",
-     "SLV",
-     "LQD",
-     "IEF"
-    ],
-    "2017-02-15": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "XLF",
-     "TLT",
-     "GLD",
-     "EFA",
-     "DIA",
-     "XLE",
-     "HYG",
-     "XLI",
-     "XLP",
-     "XLU",
-     "XLV",
-     "LQD",
-     "XLK",
-     "XLY",
-     "VNQ",
-     "XLB",
-     "IEF",
-     "SLV"
-    ],
-    "2019-07-15": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "EFA",
-     "HYG",
-     "XLF",
-     "XLV",
-     "XLK",
-     "LQD",
-     "TLT",
-     "GLD",
-     "XLU",
-     "XLI",
-     "DIA",
-     "XLP",
-     "XLE",
-     "XLY",
-     "IEF",
-     "VNQ",
-     "XLB",
-     "SLV"
-    ],
-    "2021-12-06": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "XLF",
-     "HYG",
-     "EEM",
-     "LQD",
-     "XLK",
-     "EFA",
-     "XLE",
-     "XLV",
-     "DIA",
-     "GLD",
-     "XLY",
-     "XLI",
-     "IEF",
-     "XLU",
-     "XLP",
-     "SLV",
-     "XLB",
-     "VNQ"
-    ],
-    "2024-05-03": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "LQD",
-     "HYG",
-     "XLF",
-     "GLD",
-     "XLE",
-     "DIA",
-     "XLK",
-     "XLV",
-     "XLI",
-     "EEM",
-     "EFA",
-     "XLP",
-     "XLU",
-     "XLY",
-     "IEF",
-     "SLV",
-     "XLB",
-     "VNQ"
-    ]
-   },
-   "bars_used": 97475,
-   "data_from": "2006-09-20",
-   "data_to": "2026-10-02",
-   "oos_trades": 83,
-   "profit_factor": 2.128,
-   "sharpe": 0.42,
-   "deflated_sharpe": 0.857,
-   "psr": 0.925,
-   "n_trials": 48,
-   "n_trials_this_run": 16,
-   "max_drawdown": -0.119,
-   "total_return": 0.22,
-   "win_rate": 0.59,
-   "costs_share_of_gross": 0.044,
-   "exit_reasons": {
-    "review: hard ceiling: held": 59,
-    "stop": 13,
-    "stop_gap": 6,
-    "signal_exit": 3,
-    "target": 1,
-    "target_gap": 1
-   },
-   "folds_profitable": "3/5",
-   "folds": [
-    {
-     "test": "2014-09-22..2017-02-15",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.0,
-     "test_sharpe": 0.0,
-     "trades": 0
-    },
-    {
-     "test": "2017-02-15..2019-07-15",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.067,
-     "test_sharpe": 1.091,
-     "trades": 6
-    },
-    {
-     "test": "2019-07-15..2021-12-06",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": -0.011,
-     "test_sharpe": -0.029,
-     "trades": 36
-    },
-    {
-     "test": "2021-12-06..2024-05-03",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.068,
-     "test_sharpe": 0.623,
-     "trades": 28
-    },
-    {
-     "test": "2024-05-03..2026-10-02",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.081,
-     "test_sharpe": 1.044,
-     "trades": 13
-    }
-   ],
-   "checks": [
-    {
-     "rung": "trades",
-     "value": 83,
-     "need": 100,
-     "ok": false
-    },
-    {
-     "rung": "profit_factor",
-     "value": 2.1280710745171363,
-     "need": 1.2,
-     "ok": true
-    },
-    {
-     "rung": "deflated_sharpe",
-     "value": 0.8567981148093635,
-     "need": 0.95,
-     "ok": false
-    },
-    {
-     "rung": "max_drawdown",
-     "value": -0.11892020388004831,
-     "need": -0.5,
-     "ok": true
-    },
-    {
-     "rung": "folds_profitable",
-     "value": 0.6,
-     "need": 0.5,
-     "ok": true
-    }
-   ],
-   "warnings": [],
-   "seconds": 28.0
-  },
-  {
-   "catalog_id": "buy-equity-after-vix-spike-above-30",
-   "catalog_name": "Buy equity after VIX spike above 30",
-   "catalog_status": "Screened: positive",
-   "strategy_id": "etf-vix-panic-rebound-pool22",
-   "spec": "strategies/proposed/etf-vix-panic-rebound-pool22.yaml",
-   "timeframe": "D1",
-   "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 106,
-     "profit_factor": 1.351,
-     "sharpe": 0.231,
-     "total_return": 0.101,
-     "max_drawdown": -0.124
-    },
-    "costs_x2_fixed_params": {
-     "trades": 107,
-     "profit_factor": 1.412,
-     "sharpe": 0.254,
-     "total_return": 0.12,
-     "max_drawdown": -0.117,
-     "folds_profitable": "3/5",
-     "fold_returns": [
-      -0.005,
-      0.016,
-      0.075,
-      -0.001,
-      0.031
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": -0.151,
-      "p50": 0.224,
-      "p95": 0.63
-     },
-     "p_sharpe_le_0": 0.167
-    },
-    "param_stability": 0.6,
-    "expected_max_sharpe": 0.129
-   },
-   "result": "fail",
-   "failing_rung": "deflated_sharpe",
-   "failing": [
-    "deflated_sharpe"
-   ],
-   "reasons": [
-    "deflated Sharpe 0.60 (need 0.95)"
-   ],
-   "universe_rule": "top 22 of 22 etfs by trailing 60-day median dollar volume, re-screened at 13 dates",
-   "variant": "top22-etfs-adv60",
-   "symbols": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "GLD",
-    "HYG",
-    "IEF",
-    "IWM",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "missing_symbols": [],
-   "symbols_traded_oos": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "GLD",
-    "HYG",
-    "IEF",
-    "IWM",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY"
-   ],
-   "universe_by_date": {
-    "2006-12-14": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "XLE",
-     "DIA",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLB",
-     "TLT",
-     "XLI",
-     "IEF"
-    ],
-    "2007-12-14": [
-     "QQQ",
-     "IWM",
-     "SPY",
-     "EEM",
-     "DIA",
-     "XLF",
-     "XLE",
-     "GLD",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IEF"
-    ],
-    "2008-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "DIA",
-     "EEM",
-     "XLE",
-     "XLF",
-     "GLD",
-     "TLT",
-     "IEF"
-    ],
-    "2009-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "XLF",
-     "DIA",
-     "XLE",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IEF"
-    ],
-    "2010-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "GLD",
-     "EEM",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "XLI",
-     "XLB",
-     "IEF"
-    ],
-    "2011-12-13": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "XLI",
-     "XLB",
-     "XLV",
-     "IEF"
-    ],
-    "2012-12-12": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "TLT",
-     "XLF",
-     "EFA",
-     "DIA",
-     "XLE",
-     "XLI",
-     "SLV",
-     "XLK",
-     "XLB",
-     "HYG",
-     "IEF",
-     "XLV",
-     "XLY",
-     "XLU",
-     "LQD",
-     "XLP",
-     "VNQ"
-    ],
-    "2013-12-12": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "DIA",
-     "EFA",
-     "XLF",
-     "TLT",
-     "XLE",
-     "XLI",
-     "XLY",
-     "XLU",
-     "XLV",
-     "XLP",
-     "XLK",
-     "XLB",
-     "HYG",
-     "SLV",
-     "VNQ",
-     "LQD",
-     "IEF"
-    ],
-    "2014-09-22": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "TLT",
-     "EFA",
-     "XLE",
-     "DIA",
-     "XLF",
-     "XLI",
-     "XLV",
-     "XLU",
-     "XLK",
-     "XLY",
-     "HYG",
-     "XLB",
-     "XLP",
-     "VNQ",
-     "SLV",
-     "LQD",
-     "IEF"
-    ],
-    "2017-02-15": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "XLF",
-     "TLT",
-     "GLD",
-     "EFA",
-     "DIA",
-     "XLE",
-     "HYG",
-     "XLI",
-     "XLP",
-     "XLU",
-     "XLV",
-     "LQD",
-     "XLK",
-     "XLY",
-     "VNQ",
-     "XLB",
-     "IEF",
-     "SLV"
-    ],
-    "2019-07-15": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "EFA",
-     "HYG",
-     "XLF",
-     "XLV",
-     "XLK",
-     "LQD",
-     "TLT",
-     "GLD",
-     "XLU",
-     "XLI",
-     "DIA",
-     "XLP",
-     "XLE",
-     "XLY",
-     "IEF",
-     "VNQ",
-     "XLB",
-     "SLV"
-    ],
-    "2021-12-06": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "XLF",
-     "HYG",
-     "EEM",
-     "LQD",
-     "XLK",
-     "EFA",
-     "XLE",
-     "XLV",
-     "DIA",
-     "GLD",
-     "XLY",
-     "XLI",
-     "IEF",
-     "XLU",
-     "XLP",
-     "SLV",
-     "XLB",
-     "VNQ"
-    ],
-    "2024-05-03": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "LQD",
-     "HYG",
-     "XLF",
-     "GLD",
-     "XLE",
-     "DIA",
-     "XLK",
-     "XLV",
-     "XLI",
-     "EEM",
-     "EFA",
-     "XLP",
-     "XLU",
-     "XLY",
-     "IEF",
-     "SLV",
-     "XLB",
-     "VNQ"
-    ]
-   },
-   "bars_used": 97475,
-   "data_from": "2006-09-20",
-   "data_to": "2026-10-02",
-   "oos_trades": 109,
-   "profit_factor": 1.326,
-   "sharpe": 0.206,
-   "deflated_sharpe": 0.603,
-   "psr": 0.758,
-   "n_trials": 64,
-   "n_trials_this_run": 16,
-   "max_drawdown": -0.124,
-   "total_return": 0.095,
-   "win_rate": 0.606,
-   "costs_share_of_gross": 0.05,
-   "exit_reasons": {
-    "review: hard ceiling: held": 68,
-    "stop": 20,
-    "signal_exit": 13,
-    "stop_gap": 6,
-    "target_gap": 2
-   },
-   "folds_profitable": "4/5",
-   "folds": [
-    {
-     "test": "2014-09-22..2017-02-15",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": -0.005,
-     "test_sharpe": -0.152,
-     "trades": 3
-    },
-    {
-     "test": "2017-02-15..2019-07-15",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": 0.017,
-     "test_sharpe": 0.685,
-     "trades": 6
-    },
-    {
-     "test": "2019-07-15..2021-12-06",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": 0.048,
-     "test_sharpe": 0.332,
-     "trades": 48
-    },
-    {
-     "test": "2021-12-06..2024-05-03",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 4.0
-     },
-     "test_return": 0.0,
-     "test_sharpe": 0.03,
-     "trades": 39
-    },
-    {
-     "test": "2024-05-03..2026-10-02",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 4.0
-     },
-     "test_return": 0.032,
-     "test_sharpe": 0.558,
-     "trades": 13
-    }
-   ],
-   "checks": [
-    {
-     "rung": "trades",
-     "value": 109,
-     "need": 100,
-     "ok": true
-    },
-    {
-     "rung": "profit_factor",
-     "value": 1.3260505295284106,
-     "need": 1.2,
-     "ok": true
-    },
-    {
-     "rung": "deflated_sharpe",
-     "value": 0.6032252661081458,
-     "need": 0.95,
-     "ok": false
-    },
-    {
-     "rung": "max_drawdown",
-     "value": -0.12436002769933041,
-     "need": -0.5,
-     "ok": true
-    },
-    {
-     "rung": "folds_profitable",
-     "value": 0.8,
-     "need": 0.5,
-     "ok": true
-    }
-   ],
-   "warnings": [],
-   "seconds": 41.6
-  },
-  {
-   "catalog_id": "buy-equity-after-vix-spike-above-30",
-   "catalog_name": "Buy equity after VIX spike above 30",
-   "catalog_status": "Screened: positive",
-   "strategy_id": "etf-panic-rebound-pool34",
-   "spec": "strategies/proposed/etf-panic-rebound-pool34.yaml",
-   "timeframe": "D1",
-   "market": "US stocks/ETFs (moomoo)",
-   "result": "fail",
-   "failing_rung": "trades",
-   "failing": [
-    "trades",
-    "deflated_sharpe"
-   ],
-   "reasons": [
-    "only 90 out-of-sample trades (need 100)",
-    "deflated Sharpe 0.84 (need 0.95)"
-   ],
-   "universe_rule": "top 34 of 34 etfs_wide by trailing 60-day median dollar volume, re-screened at 13 dates",
-   "variant": "top34-etfs_wide-adv60|earnings",
-   "symbols": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "EWJ",
-    "EWZ",
-    "FXI",
-    "GLD",
-    "HYG",
-    "IBB",
-    "IEF",
-    "ITB",
-    "IWM",
-    "KRE",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SMH",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "VWO",
-    "XBI",
-    "XHB",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY",
-    "XOP",
-    "XRT"
-   ],
-   "missing_symbols": [],
-   "symbols_traded_oos": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "EWJ",
-    "EWZ",
-    "FXI",
-    "GLD",
-    "HYG",
-    "IBB",
-    "IEF",
-    "ITB",
-    "IWM",
-    "KRE",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SMH",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "VWO",
-    "XHB",
-    "XLB",
-    "XLE",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY",
-    "XOP"
-   ],
-   "universe_by_date": {
-    "2006-12-14": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "XLE",
-     "DIA",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLB",
-     "TLT",
-     "XLI",
-     "IEF"
-    ],
-    "2007-12-14": [
-     "QQQ",
-     "IWM",
-     "SPY",
-     "EEM",
-     "DIA",
-     "XLF",
-     "XLE",
-     "FXI",
-     "EWZ",
-     "GLD",
-     "XLB",
-     "XLI",
-     "IBB",
-     "XRT",
-     "TLT",
-     "IEF"
-    ],
-    "2008-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "DIA",
-     "EEM",
-     "XLE",
-     "XLF",
-     "GLD",
-     "FXI",
-     "EWZ",
-     "XRT",
-     "TLT",
-     "IBB",
-     "IEF"
-    ],
-    "2009-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "XLF",
-     "DIA",
-     "EWZ",
-     "XLE",
-     "FXI",
-     "XRT",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IBB",
-     "IEF"
-    ],
-    "2010-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "GLD",
-     "EEM",
-     "XLF",
-     "EWZ",
-     "XLE",
-     "DIA",
-     "TLT",
-     "FXI",
-     "XRT",
-     "XLI",
-     "XLB",
-     "IEF",
-     "IBB"
-    ],
-    "2011-12-13": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "FXI",
-     "EWZ",
-     "XLI",
-     "XRT",
-     "XLB",
-     "XLV",
-     "IEF",
-     "IBB"
-    ],
-    "2012-12-12": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "FXI",
-     "GLD",
-     "TLT",
-     "XLF",
-     "EFA",
-     "DIA",
-     "EWZ",
-     "XLE",
-     "VWO",
-     "XLI",
-     "IBB",
-     "SLV",
-     "XLK",
-     "XLB",
-     "HYG",
-     "IEF",
-     "XLV",
-     "XRT",
-     "XOP",
-     "XLY",
-     "XLU",
-     "LQD",
-     "XLP",
-     "XHB",
-     "EWJ",
-     "VNQ",
-     "ITB",
-     "KRE",
-     "XBI",
-     "SMH"
-    ],
-    "2013-12-12": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "DIA",
-     "EFA",
-     "XLF",
-     "TLT",
-     "XLE",
-     "VWO",
-     "FXI",
-     "EWZ",
-     "XLI",
-     "XLY",
-     "XOP",
-     "EWJ",
-     "XLU",
-     "XLV",
-     "XLP",
-     "XRT",
-     "XLK",
-     "IBB",
-     "XLB",
-     "HYG",
-     "SLV",
-     "XHB",
-     "VNQ",
-     "ITB",
-     "LQD",
-     "KRE",
-     "IEF",
-     "SMH",
-     "XBI"
-    ],
-    "2014-09-22": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "TLT",
-     "EFA",
-     "XLE",
-     "DIA",
-     "FXI",
-     "XLF",
-     "EWZ",
-     "XLI",
-     "VWO",
-     "XLV",
-     "XOP",
-     "XLU",
-     "IBB",
-     "XLK",
-     "XLY",
-     "EWJ",
-     "HYG",
-     "XLB",
-     "XLP",
-     "XRT",
-     "VNQ",
-     "XHB",
-     "SLV",
-     "LQD",
-     "IEF",
-     "SMH",
-     "KRE",
-     "ITB",
-     "XBI"
-    ],
-    "2017-02-15": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "XLF",
-     "TLT",
-     "GLD",
-     "EFA",
-     "DIA",
-     "XLE",
-     "HYG",
-     "XLI",
-     "XLP",
-     "XLU",
-     "FXI",
-     "XLV",
-     "LQD",
-     "XOP",
-     "XLK",
-     "XLY",
-     "VWO",
-     "EWZ",
-     "IBB",
-     "KRE",
-     "XBI",
-     "EWJ",
-     "XRT",
-     "VNQ",
-     "XLB",
-     "IEF",
-     "SMH",
-     "SLV",
-     "ITB",
-     "XHB"
-    ],
-    "2019-07-15": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "EFA",
-     "HYG",
-     "XLF",
-     "XLV",
-     "XLK",
-     "LQD",
-     "TLT",
-     "FXI",
-     "GLD",
-     "XLU",
-     "XLI",
-     "EWZ",
-     "SMH",
-     "DIA",
-     "XLP",
-     "XLE",
-     "XOP",
-     "XLY",
-     "VWO",
-     "XBI",
-     "IEF",
-     "VNQ",
-     "XLB",
-     "KRE",
-     "EWJ",
-     "IBB",
-     "XRT",
-     "SLV",
-     "XHB",
-     "ITB"
-    ],
-    "2021-12-06": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "XLF",
-     "HYG",
-     "EEM",
-     "LQD",
-     "XLK",
-     "EFA",
-     "XLE",
-     "XLV",
-     "DIA",
-     "GLD",
-     "XLY",
-     "XLI",
-     "IEF",
-     "FXI",
-     "SMH",
-     "XOP",
-     "XLU",
-     "XLP",
-     "XBI",
-     "EWZ",
-     "KRE",
-     "SLV",
-     "XLB",
-     "EWJ",
-     "VWO",
-     "VNQ",
-     "IBB",
-     "XRT",
-     "ITB",
-     "XHB"
-    ],
-    "2024-05-03": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "LQD",
-     "HYG",
-     "SMH",
-     "XLF",
-     "GLD",
-     "XLE",
-     "DIA",
-     "XLK",
-     "XLV",
-     "XLI",
-     "EEM",
-     "EFA",
-     "XBI",
-     "FXI",
-     "XLP",
-     "XLU",
-     "XLY",
-     "IEF",
-     "EWZ",
-     "SLV",
-     "KRE",
-     "EWJ",
-     "XRT",
-     "XOP",
-     "XLB",
-     "VNQ",
-     "VWO",
-     "XHB",
-     "IBB",
-     "ITB"
-    ]
-   },
-   "bars_used": 147000,
-   "data_from": "2006-09-20",
-   "data_to": "2026-10-02",
-   "oos_trades": 90,
-   "profit_factor": 1.914,
-   "sharpe": 0.37,
-   "deflated_sharpe": 0.84,
-   "psr": 0.893,
-   "n_trials": 80,
-   "n_trials_this_run": 16,
-   "max_drawdown": -0.139,
-   "total_return": 0.195,
-   "win_rate": 0.633,
-   "costs_share_of_gross": 0.044,
-   "exit_reasons": {
-    "review: hard ceiling: held": 66,
-    "stop": 16,
-    "stop_gap": 4,
-    "signal_exit": 3,
-    "target_gap": 1
-   },
-   "folds_profitable": "3/5",
-   "folds": [
-    {
-     "test": "2014-09-22..2017-02-15",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.0,
-     "test_sharpe": 0.0,
-     "trades": 0
-    },
-    {
-     "test": "2017-02-15..2019-07-15",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.081,
-     "test_sharpe": 1.042,
-     "trades": 8
-    },
-    {
-     "test": "2019-07-15..2021-12-06",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": -0.049,
-     "test_sharpe": -0.318,
-     "trades": 37
-    },
-    {
-     "test": "2021-12-06..2024-05-03",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.092,
-     "test_sharpe": 0.703,
-     "trades": 32
-    },
-    {
-     "test": "2024-05-03..2026-10-02",
-     "params": {
-      "stop_atr": 3.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.065,
-     "test_sharpe": 0.676,
-     "trades": 13
-    }
-   ],
-   "checks": [
-    {
-     "rung": "trades",
-     "value": 90,
-     "need": 100,
-     "ok": false
-    },
-    {
-     "rung": "profit_factor",
-     "value": 1.9141384537018171,
-     "need": 1.2,
-     "ok": true
-    },
-    {
-     "rung": "deflated_sharpe",
-     "value": 0.8402500595999243,
-     "need": 0.95,
-     "ok": false
-    },
-    {
-     "rung": "max_drawdown",
-     "value": -0.13880977202786504,
-     "need": -0.5,
-     "ok": true
-    },
-    {
-     "rung": "folds_profitable",
-     "value": 0.6,
-     "need": 0.5,
-     "ok": true
-    }
-   ],
-   "warnings": [],
-   "seconds": 42.4
-  },
-  {
-   "catalog_id": "buy-equity-after-vix-spike-above-30",
-   "catalog_name": "Buy equity after VIX spike above 30",
-   "catalog_status": "Screened: positive",
-   "strategy_id": "etf-vix-panic-rebound-pool34",
-   "spec": "strategies/proposed/etf-vix-panic-rebound-pool34.yaml",
-   "timeframe": "D1",
-   "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 111,
-     "profit_factor": 1.697,
-     "sharpe": 0.359,
-     "total_return": 0.168,
-     "max_drawdown": -0.082
-    },
-    "costs_x2_fixed_params": {
-     "trades": 119,
-     "profit_factor": 1.605,
-     "sharpe": 0.298,
-     "total_return": 0.154,
-     "max_drawdown": -0.085,
-     "folds_profitable": "4/5",
-     "fold_returns": [
-      -0.006,
-      0.018,
-      0.104,
-      0.013,
-      0.02
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": -0.044,
-      "p50": 0.324,
-      "p95": 0.696
-     },
-     "p_sharpe_le_0": 0.075
-    },
-    "param_stability": 0.6,
-    "expected_max_sharpe": 0.247
-   },
-   "result": "fail",
-   "failing_rung": "deflated_sharpe",
-   "failing": [
-    "deflated_sharpe"
-   ],
-   "reasons": [
-    "deflated Sharpe 0.59 (need 0.95)"
-   ],
-   "universe_rule": "top 34 of 34 etfs_wide by trailing 60-day median dollar volume, re-screened at 13 dates",
-   "variant": "top34-etfs_wide-adv60|earnings",
-   "symbols": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "EWJ",
-    "EWZ",
-    "FXI",
-    "GLD",
-    "HYG",
-    "IBB",
-    "IEF",
-    "ITB",
-    "IWM",
-    "KRE",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SMH",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "VWO",
-    "XBI",
-    "XHB",
-    "XLB",
-    "XLE",
-    "XLF",
-    "XLI",
-    "XLK",
-    "XLP",
-    "XLU",
-    "XLV",
-    "XLY",
-    "XOP",
-    "XRT"
-   ],
-   "missing_symbols": [],
-   "symbols_traded_oos": [
-    "DIA",
-    "EEM",
-    "EFA",
-    "EWJ",
-    "EWZ",
-    "FXI",
-    "GLD",
-    "HYG",
-    "IBB",
-    "IEF",
-    "ITB",
-    "IWM",
-    "KRE",
-    "LQD",
-    "QQQ",
-    "SLV",
-    "SMH",
-    "SPY",
-    "TLT",
-    "VNQ",
-    "VWO",
-    "XBI",
-    "XHB",
-    "XLB",
-    "XLE",
-    "XLK",
-    "XLP",
-    "XOP"
-   ],
-   "universe_by_date": {
-    "2006-12-14": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "XLE",
-     "DIA",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLB",
-     "TLT",
-     "XLI",
-     "IEF"
-    ],
-    "2007-12-14": [
-     "QQQ",
-     "IWM",
-     "SPY",
-     "EEM",
-     "DIA",
-     "XLF",
-     "XLE",
-     "FXI",
-     "EWZ",
-     "GLD",
-     "XLB",
-     "XLI",
-     "IBB",
-     "XRT",
-     "TLT",
-     "IEF"
-    ],
-    "2008-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "DIA",
-     "EEM",
-     "XLE",
-     "XLF",
-     "GLD",
-     "FXI",
-     "EWZ",
-     "XRT",
-     "TLT",
-     "IBB",
-     "IEF"
-    ],
-    "2009-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "GLD",
-     "XLF",
-     "DIA",
-     "EWZ",
-     "XLE",
-     "FXI",
-     "XRT",
-     "XLB",
-     "XLI",
-     "TLT",
-     "IBB",
-     "IEF"
-    ],
-    "2010-12-13": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "GLD",
-     "EEM",
-     "XLF",
-     "EWZ",
-     "XLE",
-     "DIA",
-     "TLT",
-     "FXI",
-     "XRT",
-     "XLI",
-     "XLB",
-     "IEF",
-     "IBB"
-    ],
-    "2011-12-13": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "XLF",
-     "XLE",
-     "DIA",
-     "TLT",
-     "FXI",
-     "EWZ",
-     "XLI",
-     "XRT",
-     "XLB",
-     "XLV",
-     "IEF",
-     "IBB"
-    ],
-    "2012-12-12": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "FXI",
-     "GLD",
-     "TLT",
-     "XLF",
-     "EFA",
-     "DIA",
-     "EWZ",
-     "XLE",
-     "VWO",
-     "XLI",
-     "IBB",
-     "SLV",
-     "XLK",
-     "XLB",
-     "HYG",
-     "IEF",
-     "XLV",
-     "XRT",
-     "XOP",
-     "XLY",
-     "XLU",
-     "LQD",
-     "XLP",
-     "XHB",
-     "EWJ",
-     "VNQ",
-     "ITB",
-     "KRE",
-     "XBI",
-     "SMH"
-    ],
-    "2013-12-12": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "DIA",
-     "EFA",
-     "XLF",
-     "TLT",
-     "XLE",
-     "VWO",
-     "FXI",
-     "EWZ",
-     "XLI",
-     "XLY",
-     "XOP",
-     "EWJ",
-     "XLU",
-     "XLV",
-     "XLP",
-     "XRT",
-     "XLK",
-     "IBB",
-     "XLB",
-     "HYG",
-     "SLV",
-     "XHB",
-     "VNQ",
-     "ITB",
-     "LQD",
-     "KRE",
-     "IEF",
-     "SMH",
-     "XBI"
-    ],
-    "2014-09-22": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "GLD",
-     "TLT",
-     "EFA",
-     "XLE",
-     "DIA",
-     "FXI",
-     "XLF",
-     "EWZ",
-     "XLI",
-     "VWO",
-     "XLV",
-     "XOP",
-     "XLU",
-     "IBB",
-     "XLK",
-     "XLY",
-     "EWJ",
-     "HYG",
-     "XLB",
-     "XLP",
-     "XRT",
-     "VNQ",
-     "XHB",
-     "SLV",
-     "LQD",
-     "IEF",
-     "SMH",
-     "KRE",
-     "ITB",
-     "XBI"
-    ],
-    "2017-02-15": [
-     "SPY",
-     "IWM",
-     "QQQ",
-     "EEM",
-     "XLF",
-     "TLT",
-     "GLD",
-     "EFA",
-     "DIA",
-     "XLE",
-     "HYG",
-     "XLI",
-     "XLP",
-     "XLU",
-     "FXI",
-     "XLV",
-     "LQD",
-     "XOP",
-     "XLK",
-     "XLY",
-     "VWO",
-     "EWZ",
-     "IBB",
-     "KRE",
-     "XBI",
-     "EWJ",
-     "XRT",
-     "VNQ",
-     "XLB",
-     "IEF",
-     "SMH",
-     "SLV",
-     "ITB",
-     "XHB"
-    ],
-    "2019-07-15": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "EEM",
-     "EFA",
-     "HYG",
-     "XLF",
-     "XLV",
-     "XLK",
-     "LQD",
-     "TLT",
-     "FXI",
-     "GLD",
-     "XLU",
-     "XLI",
-     "EWZ",
-     "SMH",
-     "DIA",
-     "XLP",
-     "XLE",
-     "XOP",
-     "XLY",
-     "VWO",
-     "XBI",
-     "IEF",
-     "VNQ",
-     "XLB",
-     "KRE",
-     "EWJ",
-     "IBB",
-     "XRT",
-     "SLV",
-     "XHB",
-     "ITB"
-    ],
-    "2021-12-06": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "XLF",
-     "HYG",
-     "EEM",
-     "LQD",
-     "XLK",
-     "EFA",
-     "XLE",
-     "XLV",
-     "DIA",
-     "GLD",
-     "XLY",
-     "XLI",
-     "IEF",
-     "FXI",
-     "SMH",
-     "XOP",
-     "XLU",
-     "XLP",
-     "XBI",
-     "EWZ",
-     "KRE",
-     "SLV",
-     "XLB",
-     "EWJ",
-     "VWO",
-     "VNQ",
-     "IBB",
-     "XRT",
-     "ITB",
-     "XHB"
-    ],
-    "2024-05-03": [
-     "SPY",
-     "QQQ",
-     "IWM",
-     "TLT",
-     "LQD",
-     "HYG",
-     "SMH",
-     "XLF",
-     "GLD",
-     "XLE",
-     "DIA",
-     "XLK",
-     "XLV",
-     "XLI",
-     "EEM",
-     "EFA",
-     "XBI",
-     "FXI",
-     "XLP",
-     "XLU",
-     "XLY",
-     "IEF",
-     "EWZ",
-     "SLV",
-     "KRE",
-     "EWJ",
-     "XRT",
-     "XOP",
-     "XLB",
-     "VNQ",
-     "VWO",
-     "XHB",
-     "IBB",
-     "ITB"
-    ]
-   },
-   "bars_used": 147000,
-   "data_from": "2006-09-20",
-   "data_to": "2026-10-02",
-   "oos_trades": 119,
-   "profit_factor": 1.648,
-   "sharpe": 0.314,
-   "deflated_sharpe": 0.591,
-   "psr": 0.86,
-   "n_trials": 96,
-   "n_trials_this_run": 16,
-   "max_drawdown": -0.082,
-   "total_return": 0.161,
-   "win_rate": 0.597,
-   "costs_share_of_gross": 0.054,
-   "exit_reasons": {
-    "review: hard ceiling: held": 81,
-    "signal_exit": 14,
-    "stop": 14,
-    "stop_gap": 9,
-    "target_gap": 1
-   },
-   "folds_profitable": "4/5",
-   "folds": [
-    {
-     "test": "2014-09-22..2017-02-15",
-     "params": {
-      "stop_atr": 5.0,
-      "target_r": 2.6667
-     },
-     "test_return": -0.006,
-     "test_sharpe": -0.073,
-     "trades": 8
-    },
-    {
-     "test": "2017-02-15..2019-07-15",
-     "params": {
-      "stop_atr": 5.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.019,
-     "test_sharpe": 0.742,
-     "trades": 8
-    },
-    {
-     "test": "2019-07-15..2021-12-06",
-     "params": {
-      "stop_atr": 5.0,
-      "target_r": 2.6667
-     },
-     "test_return": 0.106,
-     "test_sharpe": 0.863,
-     "trades": 47
-    },
-    {
-     "test": "2021-12-06..2024-05-03",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": 0.016,
-     "test_sharpe": 0.135,
-     "trades": 43
-    },
-    {
-     "test": "2024-05-03..2026-10-02",
-     "params": {
-      "stop_atr": 4.3333,
-      "target_r": 2.6667
-     },
-     "test_return": 0.02,
-     "test_sharpe": 0.239,
-     "trades": 13
-    }
-   ],
-   "checks": [
-    {
-     "rung": "trades",
-     "value": 119,
-     "need": 100,
-     "ok": true
-    },
-    {
-     "rung": "profit_factor",
-     "value": 1.6480660795872695,
-     "need": 1.2,
-     "ok": true
-    },
-    {
-     "rung": "deflated_sharpe",
-     "value": 0.590783934839971,
-     "need": 0.95,
-     "ok": false
-    },
-    {
-     "rung": "max_drawdown",
-     "value": -0.0818986664978465,
-     "need": -0.5,
-     "ok": true
-    },
-    {
-     "rung": "folds_profitable",
-     "value": 0.8,
-     "need": 0.5,
-     "ok": true
-    }
-   ],
-   "warnings": [],
-   "seconds": 54.3
+   "seconds": 13.4
   },
   {
    "catalog_id": "momentum-with-crash-protection-vol-scaled",
@@ -12362,43 +9860,6 @@
    "spec": "strategies/proposed/stk-rs-momentum-crash-protected.yaml",
    "timeframe": "D1",
    "market": "US stocks/ETFs (moomoo)",
-   "near_miss": {
-    "since": {
-     "from": "2016-01-01",
-     "trades": 1329,
-     "profit_factor": 1.345,
-     "sharpe": 0.671,
-     "total_return": 1.635,
-     "max_drawdown": -0.252
-    },
-    "costs_x2_fixed_params": {
-     "trades": 1483,
-     "profit_factor": 1.301,
-     "sharpe": 0.628,
-     "total_return": 1.739,
-     "max_drawdown": -0.255,
-     "folds_profitable": "5/5",
-     "fold_returns": [
-      0.011,
-      0.455,
-      0.338,
-      0.091,
-      0.276
-     ]
-    },
-    "bootstrap_sharpe": {
-     "n": 5000,
-     "mean_block_days": 10.0,
-     "percentiles": {
-      "p5": 0.21,
-      "p50": 0.664,
-      "p95": 1.129
-     },
-     "p_sharpe_le_0": 0.005
-    },
-    "param_stability": 0.4,
-    "expected_max_sharpe": 0.18
-   },
    "result": "fail",
    "failing_rung": "deflated_sharpe",
    "failing": [
@@ -12968,7 +10429,6 @@
       "target_r": 3.6667
      },
      "test_return": 0.068,
-     "test_sharpe": 0.263,
      "trades": 285
     },
     {
@@ -12978,7 +10438,6 @@
       "target_r": 3.6667
      },
      "test_return": 0.411,
-     "test_sharpe": 0.984,
      "trades": 290
     },
     {
@@ -12988,7 +10447,6 @@
       "target_r": 4.3333
      },
      "test_return": 0.341,
-     "test_sharpe": 0.76,
      "trades": 317
     },
     {
@@ -12998,7 +10456,6 @@
       "target_r": 3.0
      },
      "test_return": 0.101,
-     "test_sharpe": 0.355,
      "trades": 294
     },
     {
@@ -13008,7 +10465,6 @@
       "target_r": 3.0
      },
      "test_return": 0.299,
-     "test_sharpe": 0.915,
      "trades": 294
     }
    ],
@@ -13045,7 +10501,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 145.2
+   "seconds": 91.2
   },
   {
    "catalog_id": "joint-time-series-and-cross-sectional-strategy",
@@ -13125,7 +10581,6 @@
       "target_r": 2.0
      },
      "test_return": -0.218,
-     "test_sharpe": -3.983,
      "trades": 411
     },
     {
@@ -13135,7 +10590,6 @@
       "target_r": 2.0
      },
      "test_return": -0.118,
-     "test_sharpe": -1.151,
      "trades": 208
     },
     {
@@ -13145,7 +10599,6 @@
       "target_r": 2.0
      },
      "test_return": -0.096,
-     "test_sharpe": -1.28,
      "trades": 179
     },
     {
@@ -13155,7 +10608,6 @@
       "target_r": 2.0
      },
      "test_return": -0.035,
-     "test_sharpe": -0.376,
      "trades": 187
     },
     {
@@ -13165,7 +10617,6 @@
       "target_r": 2.0
      },
      "test_return": -0.158,
-     "test_sharpe": -2.269,
      "trades": 189
     }
    ],
@@ -13202,7 +10653,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 105.7
+   "seconds": 73.1
   },
   {
    "catalog_id": "g10-carry-long-high-rate-short-low-rate",
@@ -13281,7 +10732,6 @@
       "target_r": 3.0
      },
      "test_return": -0.092,
-     "test_sharpe": -2.437,
      "trades": 328
     },
     {
@@ -13291,7 +10741,6 @@
       "target_r": 3.0
      },
      "test_return": -0.184,
-     "test_sharpe": -2.209,
      "trades": 291
     },
     {
@@ -13301,7 +10750,6 @@
       "target_r": 3.0
      },
      "test_return": 0.031,
-     "test_sharpe": 0.431,
      "trades": 158
     },
     {
@@ -13311,7 +10759,6 @@
       "target_r": 3.0
      },
      "test_return": -0.109,
-     "test_sharpe": -1.591,
      "trades": 153
     },
     {
@@ -13321,7 +10768,6 @@
       "target_r": 3.6667
      },
      "test_return": -0.066,
-     "test_sharpe": -1.088,
      "trades": 208
     }
    ],
@@ -13358,7 +10804,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 79.8
+   "seconds": 60.1
   },
   {
    "catalog_id": "carry-with-volatility-filter",
@@ -13437,7 +10883,6 @@
       "target_r": 4.3333
      },
      "test_return": -0.149,
-     "test_sharpe": -2.76,
      "trades": 460
     },
     {
@@ -13447,7 +10892,6 @@
       "target_r": 4.3333
      },
      "test_return": -0.168,
-     "test_sharpe": -3.262,
      "trades": 189
     },
     {
@@ -13457,7 +10901,6 @@
       "target_r": 4.3333
      },
      "test_return": -0.067,
-     "test_sharpe": -0.9,
      "trades": 195
     },
     {
@@ -13467,7 +10910,6 @@
       "target_r": 4.3333
      },
      "test_return": -0.081,
-     "test_sharpe": -1.109,
      "trades": 220
     },
     {
@@ -13477,7 +10919,6 @@
       "target_r": 3.0
      },
      "test_return": -0.108,
-     "test_sharpe": -1.437,
      "trades": 237
     }
    ],
@@ -13514,7 +10955,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 85.4
+   "seconds": 76.2
   },
   {
    "catalog_id": "rate-differential-trend-fx",
@@ -13594,7 +11035,6 @@
       "target_r": 2.6667
      },
      "test_return": 0.0,
-     "test_sharpe": 0.0,
      "trades": 0
     },
     {
@@ -13604,7 +11044,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.118,
-     "test_sharpe": -1.444,
      "trades": 218
     },
     {
@@ -13614,7 +11053,6 @@
       "target_r": 2.6667
      },
      "test_return": -0.045,
-     "test_sharpe": -0.673,
      "trades": 113
     },
     {
@@ -13624,7 +11062,6 @@
       "target_r": 2.0
      },
      "test_return": -0.19,
-     "test_sharpe": -2.847,
      "trades": 142
     },
     {
@@ -13634,7 +11071,6 @@
       "target_r": 2.0
      },
      "test_return": -0.117,
-     "test_sharpe": -2.025,
      "trades": 103
     }
    ],
@@ -13671,7 +11107,7 @@
     }
    ],
    "warnings": [],
-   "seconds": 48.4
+   "seconds": 40.7
   },
   {
    "catalog_id": "deep-momentum-network-lstm-trained-on-sharpe",

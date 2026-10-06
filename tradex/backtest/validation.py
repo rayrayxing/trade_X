@@ -92,6 +92,12 @@ class ValidationReport:
         return d
 
 
+def trial_group(spec: StrategySpec) -> list[str]:
+    """The strategy ids whose trials count toward this one's DSR N: its own, plus the ids its
+    provenance lists under ``shares_trials_with`` (other tests of the same hypothesis)."""
+    return [spec.id] + [str(x) for x in spec.provenance.get("shares_trials_with", []) or []]
+
+
 def _splits(index: pd.DatetimeIndex, wf: WalkForwardConfig, embargo: pd.Timedelta):
     n = len(index)
     first_test = int(n * wf.initial_train_frac)
@@ -190,7 +196,7 @@ def walk_forward(
     if len(equity):
         equity = pd.concat([pd.Series([base_cfg.initial_equity], index=[equity.index[0] - pd.Timedelta(days=1)]), equity])
     oos = metrics.summarize(equity, trades, oos_ret) if len(equity) else metrics.trade_stats(trades)
-    n_trials = max(len(grid), trials.count(spec.id))
+    n_trials = max(len(grid), trials.count_group(trial_group(spec)))
     var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if any(len(x) > 1 for x in trial_srs) else 0.0
     oos["dsr"] = metrics.deflated_sharpe(oos_ret, n_trials, var)
     oos["expected_max_sharpe_annual"] = metrics.expected_max_sharpe(n_trials, var) * np.sqrt(metrics.PERIODS_PER_YEAR)

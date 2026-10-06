@@ -35,10 +35,10 @@ from tradex.backtest.validation import Thresholds, WalkForwardConfig, walk_forwa
 from tradex.costs.models import model_for
 from tradex.data import earnings as earn
 from tradex.data.opend import DEFAULT_CACHE as OPEND_CACHE, load_cached
-from tradex.research import builders, catalog, panels, screen as scr
+from tradex.research import builders, catalog, panels, robust, screen as scr
 from tradex.research.sources import DataUnavailable
 from tradex.research.trials import TrialLedger
-from tradex.research.universe import ETFS, PAIRS, STOCKS
+from tradex.research.universe import ETFS, ETFS_WIDE, PAIRS, ROUND3_ETFS, STOCKS
 from tradex.strategy.spec import StrategySpec
 from tradex.timeframes import duration
 
@@ -49,7 +49,8 @@ PROPOSED = ROOT / "strategies" / "proposed"
 RESULTS = ROOT / "research" / "results"
 OANDA_CACHE = ROOT / "data" / "cache" / "oanda"
 EARNINGS_CACHE = earn.DEFAULT_CACHE
-PREVIOUS = RESULTS / "phase1_gate_run2.json"     # run 2 (screened universes, earnings, FX bid/ask), for the comparison
+PREVIOUS = RESULTS / "phase1_gate_run3.json"     # run 3 (proposed strategies, official macro inputs), for the comparison
+PREVIOUS_LABEL = "Run 3"
 
 SECTOR = {"NVDA": "XLK", "AMD": "XLK", "AAPL": "XLK", "MSFT": "XLK", "INTC": "XLK", "CSCO": "XLK", "ORCL": "XLK",
           "GOOGL": "XLK", "META": "XLK",   # XLC only exists from 2018; the old GICS home is used throughout
@@ -68,7 +69,7 @@ SECTOR |= {s: "XLV" for s in ("ABBV", "ABT", "AMGN", "BMY", "CVS", "DHR", "GILD"
 SECTOR |= {s: "XLI" for s in ("BA", "CAT", "DE", "EMR", "FDX", "GD", "GE", "HON", "LMT", "MMM", "RTX", "UNP", "UPS", "UBER")}
 
 # Screen size per pool: one fixed choice, made before any screened run (not tuned).
-SCREEN_N = {"stocks": 30, "etfs": 10, "all": 30}
+SCREEN_N = {"stocks": 30, "etfs": 10, "all": 30, "etfs_wide": 10}
 
 # Ladder order of the stage-3 gate; the first failing rung is reported.
 RUNGS = ("trades", "profit_factor", "deflated_sharpe", "max_drawdown", "folds_profitable")
@@ -81,7 +82,8 @@ class Plan:
     builder: str | None = None       # name of a data builder below
     verdict: str | None = None       # set when not run: "needs data" | "not built" | "not a standalone signal"
     why: str = ""
-    pool: str | None = None          # liquidity-screened candidate pool: "stocks" | "etfs" | "all"
+    pool: str | None = None          # liquidity-screened candidate pool: "stocks" | "etfs" | "all" | "etfs_wide"
+    screen_n: int | None = None      # screen size when not the pool's default (the whole pool: point-in-time only)
 
 
 def _seed(name):
@@ -122,10 +124,18 @@ PLANS = [
     Plan("earnings-day-jump-continuation", _proposed("stk-earnings-jump-continuation"), "earnings", pool="stocks"),
     Plan("post-earnings-announcement-drift", _proposed("stk-pead-ear"), "earnings", pool="stocks"),
     Plan("pre-fomc-announcement-drift", _proposed("etf-pre-fomc-drift-h1"), "fomc_window"),
+    Plan("pre-fomc-announcement-drift", _proposed("etf-pre-fomc-drift-d1"), "fomc_daily"),
     Plan("hidden-markov-regime-allocation", _proposed("etf-risk-on-trend"), "regime_etf"),
     Plan("realised-covariance-regime-detection", _proposed("etf-corr-calm-trend"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound"), "regime_etf"),
     Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound"), "regime_vix"),
+    # round 3: the same two rules on every ETF of the pool (and of the wider pool) listed at the time
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound-pool22"), "regime_etf", pool="etfs", screen_n=len(ETFS)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound-pool22"), "regime_vix", pool="etfs", screen_n=len(ETFS)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-panic-rebound-pool34"), "regime_etf", pool="etfs_wide",
+         screen_n=len(ETFS_WIDE)),
+    Plan("buy-equity-after-vix-spike-above-30", _proposed("etf-vix-panic-rebound-pool34"), "regime_vix", pool="etfs_wide",
+         screen_n=len(ETFS_WIDE)),
     Plan("momentum-with-crash-protection-vol-scaled", _proposed("stk-rs-momentum-crash-protected"), "rs_crash", pool="stocks"),
     Plan("joint-time-series-and-cross-sectional-strategy", _proposed("fx-currency-strength-momentum"), "fx_strength"),
     Plan("g10-carry-long-high-rate-short-low-rate", _proposed("fx-carry-trend"), "fx_carry"),
@@ -163,7 +173,7 @@ def _us(symbols, tf, cache=OPEND_CACHE) -> dict[str, pd.DataFrame]:
 
 
 def pool_symbols(pool: str) -> list[str]:
-    return {"stocks": STOCKS, "etfs": ETFS, "all": list(dict.fromkeys(ETFS + STOCKS))}[pool]
+    return {"stocks": STOCKS, "etfs": ETFS, "all": list(dict.fromkeys(ETFS + STOCKS)), "etfs_wide": ETFS_WIDE}[pool]
 
 
 def _xs_mask(values: pd.DataFrame, members: pd.DataFrame | None) -> pd.DataFrame:
@@ -343,7 +353,7 @@ def prepare(plan: Plan, spec: StrategySpec, wf: WalkForwardConfig, cfg: EngineCo
     costs = model_for(spec.asset_class, stress=stress) if stress != 1.0 else model_for(spec.asset_class)
     tradable = members = None
     if plan.pool:
-        got = _screened(plan, spec, wf, cache, screen_n or SCREEN_N[plan.pool])
+        got = _screened(plan, spec, wf, cache, screen_n or plan.screen_n or SCREEN_N[plan.pool])
         if got is None:
             return Prepared({}, [], costs, cfg)
         data, tradable, members, screen, pool_n = got
@@ -418,6 +428,8 @@ def run_plan(plan: Plan, entry: catalog.CatalogEntry, ledger: TrialLedger, wf: W
     oos = rep.oos
     if not failing:
         row["robustness"] = robustness(plan, spec, ledger, wf, th, cfg, cache)
+    elif failing == ["deflated_sharpe"]:
+        row["near_miss"] = near_miss(plan, spec, rep, wf, cfg, cache)
     traded = sorted(rep.oos_trades["symbol"].unique()) if rep.oos_trades is not None and len(rep.oos_trades) else []
     return row | {
         "result": "pass" if not failing else "fail", "failing_rung": failing[0] if failing else None,
@@ -436,7 +448,8 @@ def run_plan(plan: Plan, entry: catalog.CatalogEntry, ledger: TrialLedger, wf: W
         if rep.oos_trades is not None and len(rep.oos_trades) else {},
         "folds_profitable": f"{sum(f.test_return > 0 for f in rep.folds)}/{len(rep.folds)}",
         "folds": [{"test": f"{f.test_start[:10]}..{f.test_end[:10]}", "params": f.best_params,
-                   "test_return": _f(f.test_return), "trades": f.test_trades} for f in rep.folds],
+                   "test_return": _f(f.test_return), "test_sharpe": _f(f.test_sharpe), "trades": f.test_trades}
+                  for f in rep.folds],
         "checks": checks, "warnings": rep.warnings[:10], "seconds": round(time.time() - t0, 1),
     }
 
@@ -453,9 +466,54 @@ def robustness(plan: Plan, spec: StrategySpec, ledger, wf, th, cfg, cache=OPEND_
     """Extra checks for a pass, not part of the stage-3 gate: double spread and slippage, and
     (screened plans) a universe twice as wide. Each is recorded as its own trial variant."""
     out = {"costs_x2": _brief(_walk(spec, prepare(plan, spec, wf, cfg, cache, stress=2.0), ledger, wf, th, "|costs_x2"))}
-    if plan.pool:
+    if plan.pool and not plan.screen_n:      # a whole-pool screen has nothing wider to try
         prep = prepare(plan, spec, wf, cfg, cache, screen_n=2 * SCREEN_N[plan.pool])
         out["screen_x2"] = _brief(_walk(spec, prep, ledger, wf, th)) | {"universe_rule": prep.universe_rule}
+    return out
+
+
+SUBPERIOD = "2016-01-01"
+
+
+def near_miss(plan: Plan, spec: StrategySpec, rep, wf, cfg, cache=OPEND_CACHE) -> dict:
+    """Report-only robustness for a strategy that fails only the deflated-Sharpe rung (tradex.research.robust):
+    the out-of-sample result since 2016, each fold's test window rerun with doubled spread and slippage
+    (same chosen parameters, so no new trial), and a bootstrap interval of the out-of-sample Sharpe."""
+    stressed = prepare(plan, spec, wf, cfg, cache, stress=2.0)
+    return {"since": robust.subperiod(rep.oos_returns, rep.oos_trades, SUBPERIOD),
+            "costs_x2_fixed_params": robust.rerun_folds(spec, stressed.data, rep.folds, stressed.costs, stressed.cfg,
+                                                        stressed.tradable, stressed.filter_ctx),
+            "bootstrap_sharpe": robust.stationary_bootstrap_sharpe(rep.oos_returns),
+            "param_stability": _f(rep.param_stability), "expected_max_sharpe": _f(rep.oos.get("expected_max_sharpe_annual"))}
+
+
+def _near_miss_md(rows: list[dict]) -> list[str]:
+    nm = [r for r in rows if r.get("near_miss")]
+    if not nm:
+        return []
+    out = ["", "## Near misses: how solid are they (report only, not part of the gate)", "",
+           "Strategies that clear every rung except the deflated Sharpe. Nothing was changed to make them pass. "
+           f"Since {SUBPERIOD[:4]}: the same out-of-sample returns and trades from {SUBPERIOD} on. Costs x2: each fold's "
+           "test window rerun with the parameters that fold chose, spread and slippage doubled (no new selection, so "
+           "not a new trial). Bootstrap: stationary bootstrap of the daily out-of-sample returns, 5,000 resamples, "
+           "mean block 10 days; the Sharpe interval is 5th to 95th percentile. Expected max Sharpe is what the best "
+           "of N skill-less trials would show; the DSR asks how likely the observed Sharpe beats it.", "",
+           "| Strategy | OOS (all) | Since 2016 | Costs x2 | Bootstrap Sharpe 5-50-95% | P(Sharpe <= 0) | Expected max Sharpe (N) | Param stability |",
+           "|---|---|---|---|---|---|---|---|"]
+    for r in nm:
+        n = r["near_miss"]
+        si, cx, bs = n["since"], n["costs_x2_fixed_params"], n["bootstrap_sharpe"]
+        pc = bs["percentiles"]
+        out.append(f"| `{r['strategy_id']}` | {r['oos_trades']} trades, PF {r['profit_factor']}, Sharpe {r['sharpe']}, "
+                   f"DD {r['max_drawdown']} | {si['trades']} trades, PF {si['profit_factor']}, Sharpe {si['sharpe']}, "
+                   f"DD {si['max_drawdown']} | {cx['trades']} trades, PF {cx['profit_factor']}, Sharpe {cx['sharpe']}, "
+                   f"folds {cx['folds_profitable']} | {pc.get('p5')} / {pc.get('p50')} / {pc.get('p95')} | "
+                   f"{bs['p_sharpe_le_0']} | {n['expected_max_sharpe']} ({r['n_trials']}) | {n['param_stability']} |")
+    out += ["", "Per fold (test window: return, annualised Sharpe, trades, chosen parameters):", ""]
+    for r in nm:
+        out.append(f"- `{r['strategy_id']}`: " + "; ".join(
+            f"{f['test']}: {f['test_return']:+.1%}, Sharpe {f.get('test_sharpe')}, {f['trades']} trades, {f['params']}"
+            for f in r["folds"]))
     return out
 
 
@@ -463,7 +521,7 @@ LABELS = {"costs_x2": "spread and slippage doubled", "screen_x2": "screened univ
 
 
 def _changes(rows: list[dict], previous: dict[str, dict]) -> list[str]:
-    out = ["| Strategy | Run 2 | This run | Result change |",
+    out = [f"| Strategy | {PREVIOUS_LABEL} | This run | Result change |",
            "|---|---|---|---|"]
     for r in rows:
         if r["result"] not in ("pass", "fail"):
@@ -520,12 +578,13 @@ def render_md(rows: list[dict], meta: dict) -> str:
                              f"Sharpe {v['sharpe']}, DSR {v['deflated_sharpe']}, max DD {v['max_drawdown']}, "
                              f"folds {v['folds_profitable']}: **{v['gate']}**" +
                              (f" ({'; '.join(v['reasons'])})" if v["reasons"] else ""))
+    lines += _near_miss_md(ran)
     lines += ["", "## Not run", "", "| Catalog entry | Status in catalog | Result | Why |", "|---|---|---|---|"]
     for r in rows:
         if r["result"] not in ("pass", "fail"):
             lines.append(f"| {r['catalog_name']} | {r['catalog_status']} | {r['result']} | {r['why']} |")
     if meta.get("previous"):
-        lines += ["", "## What changed vs run 2", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
+        lines += ["", f"## What changed vs {PREVIOUS_LABEL.lower()}", ""] + [f"- {c}" for c in meta["changes"]] + [""] + \
             _changes(rows, meta["previous"])
     lines += ["", "## Caveats", ""] + [f"- {c}" for c in meta["caveats"]]
     return "\n".join(lines) + "\n"
@@ -580,25 +639,28 @@ def main(argv: list[str] | None = None) -> int:
         "universe": (f"screened at every walk-forward test-fold start (and yearly before the first) from a pool of "
                      f"{len(STOCKS)} stocks (the S&P 100 as of Oct 2026 plus the first run's names) and {len(ETFS)} ETFs; "
                      f"top {SCREEN_N['stocks']} stocks, {SCREEN_N['etfs']} ETFs, or {SCREEN_N['all']} of both, ranked by "
-                     "trailing 60-day median dollar volume using bars before the screen date only."),
+                     "trailing 60-day median dollar volume using bars before the screen date only. The panic-rebound pool "
+                     f"variants take every ETF listed at the screen date: all of the {len(ETFS)}-ETF pool, or of a "
+                     f"{len(ETFS_WIDE)}-ETF pool that adds {len(ROUND3_ETFS)} equity ETFs."),
         "earnings_coverage": cov,
         "previous": previous,
         "changes": [
-            "Merged with the proposed-strategy work: the 11 strategies in strategies/proposed/ run here, built by "
-            "tradex.research.builders from injected calendars and rate histories. The three stock ones run on the "
-            "same liquidity screen as the seeds; the ETF ones keep their full index/sector-SPDR universe.",
-            "Policy rates for all eight currencies from the central banks' own data (FRED for the Fed, ECB, BoE, RBA, "
-            "BoC Valet, SNB data portal; BoJ and RBNZ via the BIS policy-rate dataset), cached in data/cache/macro. "
-            "The carry features and FX financing read this one file. CAD, CHF and NZD pairs now run, financed.",
-            "The bundled cost table tradex/costs/policy_rates.csv is rebuilt from the same official series (the old "
-            "one was written from memory: it missed the 2026 ECB, RBA and Fed moves and dated RBA changes a day early).",
-            "Scheduled FOMC meetings 2006-2027 from federalreserve.gov feed the pre-FOMC drift strategy; Cboe VIX daily "
-            "history feeds `etf-vix-panic-rebound`, the literal VIX>30 form of the panic-rebound entry (new).",
-            "Earnings strategies from the proposals read the run-2 earnings calendar (OpenD release dates and timing, "
-            "SEC filing-date proxies before that).",
-            "30-minute OpenD bars for the 22 ETFs (no new history quota: 124 of 300 still used): "
-            "`etf-intraday-momentum-m30` takes the first half hour as its signal and enters at 15:30 (new).",
-            "Trial ledger: every parameter set of every variant run here is recorded, so N grows for re-run strategies.",
+            "Pre-FOMC drift on daily bars back to 2006 (`etf-pre-fomc-drift-d1`, new): the H1 hypothesis held close to "
+            "close, from the close of the session before the statement day to the statement day's close, on the four "
+            "index ETFs and the nine original sector SPDRs. Both orders are market-on-close orders placed a session "
+            "ahead (new engine option `fill: next_close`), decided from the published FOMC schedule only. The H1 "
+            "version runs as before; the two count their trials together.",
+            "Panic rebound on more ETFs (four new pre-registered variants, rules and search space unchanged): "
+            "`-pool22` runs on every ETF of the 22-ETF pool listed at each screen date, `-pool34` adds 12 liquid "
+            "equity ETFs downloaded for this round (SMH, XBI, KRE, ITB, XHB, XOP, XRT, IBB, EWJ, EWZ, FXI, VWO; daily "
+            "bars, OpenD history quota 124 -> 136 of 300). All six panic-rebound specs count their trials together.",
+            "DSR's N can now span specs that test one hypothesis (`provenance.shares_trials_with`): the pre-FOMC pair "
+            "and the six panic-rebound specs. This raises N for the run-3 versions of those strategies.",
+            "Near misses (every rung passed except the deflated Sharpe) get a report-only robustness block: results "
+            "since 2016, each fold's test window rerun with doubled spread and slippage at the parameters it chose, and "
+            "a stationary-bootstrap interval of the out-of-sample Sharpe. Nothing about these strategies was changed.",
+            "Gate thresholds are unchanged (config/gates/thresholds.yaml is not touched).",
+            "Trial ledger kept: every parameter set run here is added, so N grows for re-run strategies.",
         ],
         "caveats": [
             "Survivorship bias remains: the candidate pool is today's S&P 100 and today's ETFs. OpenD has no delisted "
@@ -620,7 +682,13 @@ def main(argv: list[str] | None = None) -> int:
             "FX seeds' no_high_impact_news_30m filter is inactive: there is no historical macro calendar before 2026.",
             "Stock spreads are the cost model's defaults (1 bp half-spread + 2 bp slippage), not measured quotes.",
             "Fixed moomoo fees (US$0.99 + 9% GST per order) weigh heavily at the US$10,000 test equity.",
-            "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years.",
+            "OpenD history starts 2006-09 for daily bars and 2018-09 for 60-minute bars; Oanda history here is 10 years. "
+            "Of the 12 round-3 ETFs, OpenD serves daily bars from 2006 only for XRT, IBB, EWZ and FXI; the other eight start "
+            "in 2012 (their own listings are older), so the point-in-time screen admits them from 2012.",
+            "The daily pre-FOMC flags assume the exchange calendar is known in advance (it is published years ahead): the "
+            "backtest reads it from the bars. Scheduled meetings only; the March 2020 meeting, replaced by the 15 March "
+            "emergency cut, is not in the calendar, so no trade was planned for it. The statement-day close includes about "
+            "two hours of reaction after the 14:00 (14:15 before 2013) statement.",
             "DSR's N is every parameter set ever recorded for the strategy in the trial ledger, across all variants.",
         ],
     }

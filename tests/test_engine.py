@@ -125,3 +125,24 @@ def test_metrics_summary_fields(stock_data):
     assert m["costs_usd"] > 0
     assert -1 < m["max_drawdown"] <= 0
     assert res.equity.iloc[-1] == pytest.approx(10_000 + res.trades.net_pnl.sum(), rel=1e-6)
+
+
+def test_next_close_fill_enters_and_exits_at_closes_a_bar_after_the_decision():
+    bars = flat_bars(30)
+    bars["close"] = 100.0 + np.arange(30) * 0.1           # distinct closes to read the fills from
+    bars["open"] = bars["close"] - 0.05
+    flag = pd.Series(0.0, index=bars.index)
+    flag.iloc[20] = 1.0
+    d = {**simple_spec(long="close > 0").raw, "fill": "next_close", "entry": {"long": "enter > 0"},
+         "features": {"enter": {"fn": "data.column", "name": "enter"}, "leave": {"fn": "data.column", "name": "leave"}},
+         "exit": {"stop_atr": 3.0, "target_r": 6.0, "max_bars": 5, "long_when": "leave > 0"}}
+    spec = StrategySpec.from_dict(d)
+    assert spec.validate() == []
+    data = bars.assign(enter=flag, leave=flag.shift(1, fill_value=0.0))
+    res = run_backtest(spec, {"X": data}, MoomooStockCosts(**ZERO_COST))
+    assert len(res.trades) == 1
+    t = res.trades.iloc[0]
+    assert t.entry_time == bars.index[21] + pd.Timedelta(days=1) and t.entry_price == pytest.approx(bars.close.iloc[21])
+    assert t.exit_time == bars.index[22] + pd.Timedelta(days=1) and t.exit_price == pytest.approx(bars.close.iloc[22])
+    assert t.bars_held == 1 and t.exit_reason == "signal_exit"
+    assert StrategySpec.from_dict({**d, "fill": "same_close"}).validate() == ["fill must be one of ['next_open', 'next_close']"]
