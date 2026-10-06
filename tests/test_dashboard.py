@@ -108,7 +108,9 @@ def test_index_and_static_are_served_with_csp(client):
     r = client.get("/")
     assert r.status_code == 200 and "trade_X" in r.text
     assert r.headers["content-security-policy"] == CSP
-    assert "lightweight-charts" in r.text and "cdnjs.cloudflare.com" in r.text
+    assert "lightweight-charts" in r.text and "cdnjs.cloudflare.com" not in r.text and "https://" not in CSP
+    lib = client.get("/static/vendor/lightweight-charts-4.1.3.standalone.production.js")
+    assert lib.status_code == 200 and "createChart" in lib.text      # the chart library is served locally, not from a CDN
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/app.css").status_code == 200
 
@@ -373,3 +375,26 @@ def test_change_token_moves_when_the_ledger_grows(tmp_path, ledger_path):
     led.close()
     assert v.change_token() != a
     assert Views(sources(tmp_path, tmp_path / "nope.sqlite")).change_token() == "none"
+
+
+# --- a silent core is not "trading normally" -------------------------------------------------------
+
+def test_a_core_that_has_gone_quiet_is_flagged_not_called_normal(tmp_path, ledger_path):
+    v = Views(sources(tmp_path, ledger_path))
+    assert not any("No ledger activity" in a["text"] for a in v.today(NOW)["attention"])
+    d = v.today(NOW + timedelta(hours=9))                                  # nothing written for ~9 hours
+    quiet = [a for a in d["attention"] if "No ledger activity" in a["text"]]
+    assert quiet and quiet[0]["level"] == "fault"
+    assert d["headline"].startswith("Running, but something needs a look")
+
+
+def test_weekend_gap_and_replays_are_not_flagged():
+    v = Views(Sources())
+    friday_night = {"real": True, "last_event_time": "2026-10-09T20:00:00+00:00"}    # a Friday
+    assert v.stale_age_s(friday_night, datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)) is None   # Saturday noon
+    assert v.stale_age_s(friday_night, datetime(2026, 10, 11, 23, 0, tzinfo=timezone.utc)) is None   # Sunday night
+    assert v.stale_age_s(friday_night, datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)) is not None   # a week later
+    assert v.stale_age_s(friday_night | {"real": False}, datetime(2027, 1, 1, tzinfo=timezone.utc)) is None
+    midweek = {"real": True, "last_event_time": "2026-10-07T08:00:00+00:00"}
+    assert v.stale_age_s(midweek, datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)) is None        # 4 h: fine
+    assert v.stale_age_s(midweek, datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)) is not None    # 7 h: stale
