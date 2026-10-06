@@ -175,7 +175,8 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
                   account_currencies: set[str] | None = None,
                   marks: dict[str, Callable[[list[str]], dict[str, float]]] | None = None,
                   guardian_factory: Callable[..., Any] | None = None,
-                  quiet_marks: Callable[[pd.Timestamp], bool] | None = None) -> Runtime:
+                  quiet_marks: Callable[[pd.Timestamp], bool] | None = None,
+                  profit=None) -> Runtime:
     """``history[asset_class]`` is the bar provider for start-up history; ``stream`` is the
     Oanda price stream; ``feeds[asset_class]`` is any other live bar feed (an object with
     ``before_close(tf, ts)``, and ``bind(store, health)`` if it needs them).
@@ -270,7 +271,7 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     gate = RiskGate.from_policy(policy_path, es)
     core_cfg = CoreConfig(mode=mode, agents_mode=cfg.agents_mode, simulation=False)
     core = TradingCore(specs, store, clock, ledger, gate, brokers={"ensemble": book}, rates=rates,
-                       calendar=calendar, cfg=core_cfg, symbols=symbols, base_tf=base_tf, costs=costs)
+                       calendar=calendar, cfg=core_cfg, symbols=symbols, base_tf=base_tf, costs=costs, profit=profit)
     feed = None
     if fx_syms or acct_pairs:
         feed = StreamFeed(stream, quotes, store, fx_syms, base_tf, core.health,

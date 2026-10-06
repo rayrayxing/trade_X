@@ -25,16 +25,31 @@ def _cross_below(a, b):
     return (a < b) & (a.shift(1) >= (b.shift(1) if isinstance(b, pd.Series) else b))
 
 
+class ExprError(ValueError):
+    pass
+
+
+def _lag(n, minimum: int = 1) -> int:
+    """A look-back count must be a whole number of bars in the past. ``shift(x, -3)`` is the value three
+    bars in the FUTURE, which a live bar-close run cannot have: such a rule would backtest well and
+    then trade on nothing."""
+    if isinstance(n, bool) or not isinstance(n, (int, float)) or n != int(n):
+        raise ExprError(f"look-back count must be a whole number, got {n!r}")
+    if int(n) < minimum:
+        raise ExprError(f"look-back count must be at least {minimum} (no future bars), got {int(n)}")
+    return int(n)
+
+
 FUNCS: dict[str, Callable] = {
-    "shift": lambda x, n=1: x.shift(int(n)),
+    "shift": lambda x, n=1: x.shift(_lag(n, 0)),
     "cross_above": _cross_above,
     "cross_below": _cross_below,
     "abs": lambda x: x.abs() if isinstance(x, pd.Series) else abs(x),
-    "rolling_max": lambda x, n: x.rolling(int(n)).max(),
-    "rolling_min": lambda x, n: x.rolling(int(n)).min(),
-    "rolling_mean": lambda x, n: x.rolling(int(n)).mean(),
-    "rising": lambda x, n=1: x > x.shift(int(n)),
-    "falling": lambda x, n=1: x < x.shift(int(n)),
+    "rolling_max": lambda x, n: x.rolling(_lag(n)).max(),
+    "rolling_min": lambda x, n: x.rolling(_lag(n)).min(),
+    "rolling_mean": lambda x, n: x.rolling(_lag(n)).mean(),
+    "rising": lambda x, n=1: x > x.shift(_lag(n)),
+    "falling": lambda x, n=1: x < x.shift(_lag(n)),
 }
 
 _CMP = {
@@ -45,10 +60,6 @@ _BIN = {
     ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
     ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b,
 }
-
-
-class ExprError(ValueError):
-    pass
 
 
 def names_in(expr: str) -> set[str]:

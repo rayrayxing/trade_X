@@ -45,6 +45,16 @@ CREATE INDEX IF NOT EXISTS events_decision ON events(decision_id);
 CREATE INDEX IF NOT EXISTS events_kind_time ON events(kind, time);
 CREATE INDEX IF NOT EXISTS events_book ON events(book, kind);
 
+-- The newest row's seq and hash, rewritten in the same transaction as every append. verify() compares
+-- the table's tail with it, so rows cut off the END of the chain (which the hash links cannot see)
+-- are noticed. Mailbox cannot write it. Someone who can edit both tables and recompute hashes can
+-- still forge: a copy of the head kept outside this file (Telegram, a daily export) is the next step.
+CREATE TABLE IF NOT EXISTS chain_head (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    seq   INTEGER NOT NULL,
+    hash  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS commands (
     id          INTEGER PRIMARY KEY,
     time        TEXT NOT NULL,
@@ -141,6 +151,14 @@ class Ledger:
             self.db.execute("PRAGMA synchronous=NORMAL")
             self.db.executescript(SCHEMA)
         self.db.row_factory = sqlite3.Row
+        if not read_only:
+            planted = [r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")]
+            if planted:                       # the schema defines none: a trigger runs with the core's rights
+                self.db.close()
+                raise RuntimeError(f"ledger file has unexpected triggers {planted}; refusing to write to it")
+            with self._lock, self.db:      # a file from before the anchor existed: trust its tail once
+                self.db.execute("INSERT OR IGNORE INTO chain_head (id, seq, hash)"
+                                " SELECT 1, seq, hash FROM events ORDER BY seq DESC LIMIT 1")
 
     # --- writing ---------------------------------------------------------------------
 
@@ -160,17 +178,28 @@ class Ledger:
         payload = json.dumps(d, sort_keys=True, separators=(",", ":"))
         kind, time = d["kind"], str(d.get("time", ""))
         decision_id = d.get("decision_id")
-        with self._lock, self.db:
-            last = self.db.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
-            prev = last["hash"] if last else GENESIS
-            h = row_hash(prev, kind, time, decision_id, payload, self.git_commit, self.config_hash)
-            cur = self.db.execute(
-                "INSERT INTO events (kind, time, decision_id, book, symbol, payload, git_commit, config_hash,"
-                " run_id, prev_hash, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (kind, time, decision_id, d.get("book"), d.get("symbol"), payload, self.git_commit,
-                 self.config_hash, self.run_id, prev, h),
-            )
-            return int(cur.lastrowid)
+        with self._lock:
+            # BEGIN IMMEDIATE takes the write lock BEFORE the chain head is read, so two processes
+            # appending to one file queue up (busy_timeout) instead of both chaining to the same row.
+            if not self.db.in_transaction:          # a caller's own open write transaction already holds the lock
+                self.db.execute("BEGIN IMMEDIATE")
+            try:
+                last = self.db.execute("SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+                prev = last["hash"] if last else GENESIS
+                h = row_hash(prev, kind, time, decision_id, payload, self.git_commit, self.config_hash)
+                cur = self.db.execute(
+                    "INSERT INTO events (kind, time, decision_id, book, symbol, payload, git_commit, config_hash,"
+                    " run_id, prev_hash, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (kind, time, decision_id, d.get("book"), d.get("symbol"), payload, self.git_commit,
+                     self.config_hash, self.run_id, prev, h),
+                )
+                seq = int(cur.lastrowid)
+                self.db.execute("INSERT OR REPLACE INTO chain_head (id, seq, hash) VALUES (1, ?, ?)", (seq, h))
+                self.db.commit()
+            except BaseException:
+                self.db.rollback()
+                raise
+            return seq
 
     def add_command(self, time: str, source: str, command: str, args: dict | None = None) -> int:
         with self._lock, self.db:
@@ -271,12 +300,18 @@ class Ledger:
 
     def verify(self) -> tuple[bool, int | None]:
         """Recompute the hash chain. Returns (ok, first bad seq)."""
-        prev = GENESIS
+        prev, last_seq = GENESIS, 0
         for r in self.iter_events():
             h = row_hash(prev, r["kind"], r["time"], r["decision_id"], r["payload"], r["git_commit"], r["config_hash"])
             if r["prev_hash"] != prev or r["hash"] != h:
                 return False, int(r["seq"])
-            prev = r["hash"]
+            prev, last_seq = r["hash"], int(r["seq"])
+        try:
+            head = self.db.execute("SELECT seq, hash FROM chain_head WHERE id=1").fetchone()
+        except sqlite3.OperationalError:       # a read-only open of a file from before the anchor existed
+            head = None
+        if head is not None and (int(head["seq"]) != last_seq or head["hash"] != prev):
+            return False, last_seq + 1         # rows were cut off the end (or the anchor was altered)
         return True, None
 
     def digest(self, kinds: tuple[str, ...] = ("plan", "veto", "verdict", "order", "fill", "close")) -> str:

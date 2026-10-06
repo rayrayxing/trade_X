@@ -23,13 +23,27 @@ ALLOWED_ACTIONS = ("veto", "shrink", "close", "flag")
 WRITABLE = {"commands", "agent_inbox", "agent_calls"}
 
 
+SAFE_PRAGMAS = {"busy_timeout", "table_info", "table_xinfo", "index_list", "foreign_key_list", "database_list"}
+SCHEMA_TABLES = {"sqlite_master", "sqlite_schema", "sqlite_temp_master", "sqlite_temp_schema"}
+
+
 def _make_authorizer(writable: set[str]):
+    """Deny everything that could make the core, which has no authorizer, write to ``events`` on the
+    mailbox's behalf: writes outside the mailbox tables (and the schema tables), schema changes,
+    triggers, ATTACH and PRAGMAs such as writable_schema."""
+    writes = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
+    schema_ops = {getattr(sqlite3, n) for n in (
+        "SQLITE_DROP_TABLE", "SQLITE_ALTER_TABLE", "SQLITE_DROP_INDEX", "SQLITE_DROP_TRIGGER", "SQLITE_CREATE_TRIGGER",
+        "SQLITE_CREATE_TEMP_TRIGGER", "SQLITE_DROP_TEMP_TRIGGER", "SQLITE_ATTACH", "SQLITE_DETACH",
+        "SQLITE_CREATE_VIEW", "SQLITE_CREATE_TEMP_VIEW", "SQLITE_DROP_VIEW", "SQLITE_DROP_TEMP_VIEW",
+        "SQLITE_CREATE_VTABLE", "SQLITE_DROP_VTABLE") if hasattr(sqlite3, n)}
+
     def auth(op: int, a1: str | None, a2: str | None, db: str | None, src: str | None) -> int:
-        writes = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
-        if op in writes and a1 not in writable and not (a1 or "").startswith("sqlite_"):
+        if op in writes and (a1 not in writable or a1 in SCHEMA_TABLES):
             return sqlite3.SQLITE_DENY
-        if op in (sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_ALTER_TABLE, sqlite3.SQLITE_DROP_INDEX,
-                  sqlite3.SQLITE_DROP_TRIGGER):
+        if op in schema_ops:
+            return sqlite3.SQLITE_DENY
+        if op == sqlite3.SQLITE_PRAGMA and (a1 or "").lower() not in SAFE_PRAGMAS:
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
     return auth
@@ -111,10 +125,13 @@ def ingest_inbox(ledger: Ledger, time: str, handlers: dict[str, Handler] | None 
                 res, applied = got if isinstance(got, tuple) else (got, True)
             except Exception as exc:  # noqa: BLE001 - a bad agent row must not stop trading
                 res = f"ignored: handler failed ({type(exc).__name__})"
-        with ledger._lock, ledger.db:
-            ledger.db.execute("UPDATE agent_inbox SET applied_at=?, result=? WHERE id=?", (time, res, r["id"]))
+        # Record in the chain first, then mark the row done: a crash in between re-runs the handler (every
+        # handler is idempotent: cancels, never-larger shrinks, exits keyed by inbox id) and records it
+        # again, instead of marking a request done that the ledger never saw.
         ledger.append(AgentOutput(time=time, agent=r["source"], provider="", model="",
                                   action=action if action in ALLOWED_ACTIONS else "note", target=target,
                                   body={"inbox_id": r["id"], "applied": applied, "result": res, "request": body}))
+        with ledger._lock, ledger.db:
+            ledger.db.execute("UPDATE agent_inbox SET applied_at=?, result=? WHERE id=?", (time, res, r["id"]))
         out.append(IngestResult(r["id"], action, target, applied, res))
     return out

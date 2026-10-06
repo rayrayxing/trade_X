@@ -87,7 +87,7 @@ def build_replay_core(strategies: list[StrategySpec], frames: dict[str, pd.DataF
                       short_info: dict[str, ShortInfo] | None = None, cfg: CoreConfig | None = None,
                       policy_path: str | Path | None = None, use_es: bool = True, base_tf: str | None = None,
                       data: BarStore | None = None, clock: ReplayClock | None = None,
-                      brokers: dict | None = None) -> TradingCore:
+                      brokers: dict | None = None, profit=None) -> TradingCore:
     """The core as replay runs it. ``data`` and ``clock`` may be supplied (a live-style store
     the caller appends to); risk-model inputs always come from ``frames`` before ``start``."""
     tfs = sorted({s.signal_tf for s in strategies}, key=duration)
@@ -105,17 +105,17 @@ def build_replay_core(strategies: list[StrategySpec], frames: dict[str, pd.DataF
         es = ESModel(rets) if len(rets) >= 20 else None
     gate = RiskGate.from_policy(policy_path, es)
     return TradingCore(strategies, data, clock, ledger, gate, brokers=brokers, rates=rates, calendar=calendar,
-                       short_info=short_info, cfg=cfg, symbols=list(frames), base_tf=base_tf)
+                       short_info=short_info, cfg=cfg, symbols=list(frames), base_tf=base_tf, profit=profit)
 
 
 def run_replay(strategies: list[StrategySpec], frames: dict[str, pd.DataFrame], ledger: Ledger,
                start: pd.Timestamp | None = None, end: pd.Timestamp | None = None,
                calendar: EventCalendar | None = None, short_info: dict[str, ShortInfo] | None = None,
                cfg: CoreConfig | None = None, policy_path: str | Path | None = None,
-               use_es: bool = True, base_tf: str | None = None) -> ReplayResult:
+               use_es: bool = True, base_tf: str | None = None, profit=None) -> ReplayResult:
     """Replay ``frames`` (bars on ``base_tf``, default the finest strategy timeframe)."""
     core = build_replay_core(strategies, frames, ledger, start, calendar, short_info, cfg, policy_path, use_es,
-                             base_tf)
+                             base_tf, profit=profit)
     last = None
     for ts, tf in close_events(core.data, core.tfs, start, end):
         core.clock.set(ts)

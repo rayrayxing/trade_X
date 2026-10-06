@@ -67,6 +67,7 @@ from tradex.execution.checks import SanityPolicy, ShortInfo, ShortPolicy, sanity
 from tradex.execution.guard import OrderRefused
 from tradex.execution.sim import MARGIN_RATES, SimBroker
 from tradex.positions.review import ActionKind, MarketSnapshot, OpenPosition, PositionReviewer
+from tradex.profit.hooks import ProfitHooks
 from tradex.risk.exposure import Leg, net_open_position
 from tradex.risk.gate import BookState, RiskGate
 from tradex.runtime.fx import LIVE_MODES, MissingRate, RateSource, SeriesRates, rate_snapshot
@@ -114,6 +115,8 @@ class _Meta:
     best_price: float | None = None
     qty: float = 0.0                              # filled and still open
     risk_usd: float = 0.0                         # loss to the entry stop on what is still open
+    qty0: float = 0.0                             # filled at entry: the base of a partial exit's share
+    cost_r: float = 0.0                           # the plan's round-trip cost in R
 
 
 class TradingCore:
@@ -121,8 +124,9 @@ class TradingCore:
                  gate: RiskGate, brokers: dict[str, Broker] | None = None, rates: RateSource | None = None,
                  calendar: EventCalendar | None = None, short_info: dict[str, ShortInfo] | None = None,
                  cfg: CoreConfig | None = None, symbols: list[str] | None = None, base_tf: str | None = None,
-                 costs: dict[str, CostModel] | None = None):
+                 costs: dict[str, CostModel] | None = None, profit: ProfitHooks | None = None):
         self.cfg = cfg or CoreConfig()
+        self.profit = profit
         self.strategies = [s for s in strategies if s.status not in INACTIVE]
         self.data, self.clock, self.ledger, self.gate = data, clock, ledger, gate
         self.rates = rates or SeriesRates(None, self.cfg.mode)
@@ -293,6 +297,7 @@ class TradingCore:
             self._health("fx_rate", False, f"{f.decision_id}: {exc}; R multiple unknown", f.time)
             bu = 0.0
         m.qty += f.qty
+        m.qty0 += f.qty
         m.risk_usd += abs(f.price - m.stop) * f.qty * bu
 
     def _on_close(self, book: str, br: Broker, f: BrokerFill) -> None:
@@ -380,6 +385,8 @@ class TradingCore:
             return
         if plan is None:
             return
+        if self.profit is not None and book == "ensemble":
+            plan = self.profit.annotate_plan(plan)
         self.ledger.append(plan)
         for v in votes:
             self.ledger.append(replace(v, decision_id=did, book=book))
@@ -388,7 +395,7 @@ class TradingCore:
             return
         # gate 3: context, subtract only
         hold_end = close_t + duration(plan.tf or tf) * plan.max_bars
-        veto, factor, _ = self.calendar.check(plan.symbol, plan.asset_class, close_t, hold_end)
+        veto, cal_factor, _ = self.calendar.check(plan.symbol, plan.asset_class, close_t, hold_end)
         if veto:
             self._block(plan, "calendar", veto, close_t)
             return
@@ -396,9 +403,9 @@ class TradingCore:
         if sv:
             self._block(plan, "short_check", sv, close_t)
             return
-        factor = 1.0
+        agent_factor = 1.0
         if book == "ensemble":
-            rule, factor = self.desk.at_gate(plan, close_t)
+            rule, agent_factor = self.desk.at_gate(plan, close_t)
             if rule is not None:
                 self._block(plan, f"agent:{rule.source}", rule.reason, close_t)
                 return
@@ -421,7 +428,7 @@ class TradingCore:
                             + sum(cm.order_fees(plan.symbol, -plan.direction, q, plan.targets[0], close_t).values()))
         state = BookState(eq, legs, self.tier, fx, q_margin, margin)
         promoted = book == "ensemble" and all(self.spec_by_id[s].status == "live" for s in plan.strategies)
-        verdict = self.gate.review(plan, state, bu, fee_fn, factor, promoted)
+        verdict = self.gate.review(plan, state, bu, fee_fn, cal_factor, promoted)   # the calendar's halving sizes inside the gate
         verdict.verdict_id = f"{did}-v"
         self.ledger.append(verdict)
         if verdict.outcome != "accepted":
@@ -431,24 +438,31 @@ class TradingCore:
         if insane:
             self._block(plan, "sanity", insane, close_t)
             return
-        qty = verdict.qty if factor >= 1.0 else shrink_qty(verdict.qty, factor)
+        # an agent's shrink applies once, to the size the gate approved (never inside the gate as well)
+        qty = verdict.qty if agent_factor >= 1.0 else shrink_qty(verdict.qty, agent_factor)
         if qty <= 0:
-            self._block(plan, "agent", f"agent shrink {factor:g} leaves no size", close_t)
+            self._block(plan, "agent", f"agent shrink {agent_factor:g} leaves no size", close_t)
             return
+        if self.profit is not None and book == "ensemble":      # vol targeting: a suggestion the gate's size caps; it only shrinks
+            qty = shrink_qty(qty, self.profit.size_factor(self.ledger, book, self.gate.policy["sizing"]["per_trade_cap_pct"]))
+            if qty <= 0:
+                self._block(plan, "vol_target", "vol-target shrink leaves no size", close_t)
+                return
         side = plan.direction
+        tp = self.profit.attach_target(plan) if self.profit is not None and book == "ensemble" else plan.targets[0]
         req = OrderRequest(f"{did}-entry", did, plan.symbol, plan.asset_class, side, qty, "market", None,
-                           plan.stop, plan.targets[0], "entry", book, verdict_id=verdict.verdict_id)
+                           plan.stop, tp, "entry", book, verdict_id=verdict.verdict_id)
         if not self._place(book, br, req, close_t):
             self._block(plan, self._place_err, "order refused" if self._place_err == "order_guard" else
                         "broker error", close_t)
             return
         self.ledger.append(Order(did, req.client_order_id, close_t.isoformat(), plan.symbol, side, qty,
-                                 "market", None, "entry" if factor >= 1.0 else f"entry: agent shrink {factor:g}",
+                                 "market", None, "entry" if agent_factor >= 1.0 else f"entry: agent shrink {agent_factor:g}",
                                  book))
         # the finest-timeframe agreeing strategy manages the position: its bars count the time stop
         mgr = next((s for s in plan.strategies if self.spec_by_id[s].signal_tf == plan.tf), plan.strategies[0])
         self.meta[(book, did)] = _Meta(mgr, abs(plan.entry_price - plan.stop), plan.max_bars,
-                                       plan.targets[0], list(plan.targets), plan.stop)
+                                       plan.targets[0], list(plan.targets), plan.stop, cost_r=plan.cost_r)
         if book == "ensemble":
             self._entries[did] = (req, plan)
 
@@ -504,7 +518,13 @@ class TradingCore:
                 snap.next_rollover_time = cut
                 snap.next_rollover_cost_usd = -p.qty * c * op.base_to_usd * rate * days / 365.0
             reviewer = self.reviewers.get(m.strategy_id) or PositionReviewer()
-            for act in reviewer.review(op, snap):
+            acts = reviewer.review(op, snap)
+            if self.profit is not None and book == "ensemble":
+                acts = self.profit.manage(book, p.decision_id, direction=p.direction, entry_price=p.entry_price,
+                                          entry_time=p.entry_time, initial_stop=m.stop, stop=p.stop, targets=m.targets,
+                                          max_bars=m.max_bars, cost_r=m.cost_r, qty0=m.qty0, qty=p.qty,
+                                          bars=self.data.bars(sym, close_t, tf), base=acts, tf_duration=duration(tf))
+            for act in acts:
                 if act.kind == ActionKind.MOVE_STOP and act.price is not None:
                     self.ledger.append(ExitChange(p.decision_id, close_t.isoformat(), "stop", p.stop, act.price, act.reason))
                     br.amend_stop(p.decision_id, act.price)
@@ -515,6 +535,8 @@ class TradingCore:
                     if self._place(book, br, req, close_t):
                         self.ledger.append(Order(p.decision_id, req.client_order_id, close_t.isoformat(), sym,
                                                  -p.direction, qty, "market", None, f"exit: {act.reason}", book))
+                        if self.profit is not None and act.kind == ActionKind.REDUCE and act.price is not None:
+                            self.profit.note_reduce(book, p.decision_id)
 
     def _has_open_order(self, book: str, sym: str) -> bool:
         br, orders = self.brokers[book], self._orders.setdefault(book, {})
@@ -662,6 +684,11 @@ class TradingCore:
         elif day != self._last_snap_day:
             self._snapshot_all(close_t)
             self._last_snap_day = day
+            if self.profit is not None:
+                try:
+                    self.profit.daily(self.ledger, self.costs, self.rates.usd_per_unit, close_t)
+                except Exception as exc:  # noqa: BLE001 - a failed refit leaves the last models in place and is a fault to see
+                    self._health("profit", False, f"daily refit: {type(exc).__name__}: {exc}", close_t)
 
     def _snapshot_all(self, t: pd.Timestamp) -> None:
         bk = self.gate.policy["book"]

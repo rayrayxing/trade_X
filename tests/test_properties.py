@@ -127,7 +127,6 @@ def test_row_hash_separates_fields(parts):
         assert h1 != h2
 
 
-@known_gap("H1", "verify() cannot see rows removed from the END of the chain: there is no anchor outside the table")
 def test_h1_truncating_the_tail_of_the_chain_is_detected():
     led = _ledger([Veto(f"2026-03-02-{i:04d}", T0.isoformat(), "risk", "r") for i in range(5)])
     led.db.execute("DELETE FROM events WHERE seq >= 4")
@@ -167,7 +166,6 @@ class _RaceDb:
         return getattr(self._real, name)
 
 
-@known_gap("H2", "Ledger.append reads the chain head outside its write transaction: two writer processes fork the chain")
 def test_h2_two_writers_on_one_file_keep_a_single_chain(tmp_path):
     path = tmp_path / "ledger.sqlite"
     Ledger(path, git_commit="t").append(Veto("2026-03-02-0000", T0.isoformat(), "risk", "first"))
@@ -188,6 +186,56 @@ def test_h2_two_writers_on_one_file_keep_a_single_chain(tmp_path):
     reader = Ledger(path, read_only=True)
     assert not errors and len(reader.rows()) == 3
     assert reader.verify() == (True, None)
+
+
+def test_h2_many_concurrent_writers_keep_a_single_chain(tmp_path):
+    """No injected race: four writers with their own connections append in parallel."""
+    path = tmp_path / "ledger.sqlite"
+    Ledger(path, git_commit="t").append(Veto("2026-03-02-0000", T0.isoformat(), "risk", "first"))
+    errors = []
+
+    def writer(w):
+        try:
+            led = Ledger(path, git_commit="t", run_id=f"w{w}")
+            for i in range(25):
+                led.append(Veto(f"2026-03-02-{w}{i:03d}", T0.isoformat(), "risk", f"{w}-{i}"))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    ts = [threading.Thread(target=writer, args=(w,)) for w in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    reader = Ledger(path, read_only=True)
+    assert not errors and len(reader.rows()) == 101
+    assert reader.verify() == (True, None)
+
+
+def test_h1_the_chain_head_cannot_be_rolled_back_to_an_earlier_row(tmp_path):
+    path = tmp_path / "ledger.sqlite"
+    led = Ledger(path, git_commit="t")
+    for i in range(5):
+        led.append(Veto(f"2026-03-02-{i:04d}", T0.isoformat(), "risk", "r"))
+    led.db.execute("DELETE FROM events WHERE seq >= 4")
+    led.db.commit()
+    ok, bad = Ledger(path, read_only=True).verify()
+    assert not ok and bad == 4
+
+
+def test_h1_a_ledger_file_from_before_the_anchor_is_anchored_on_first_write(tmp_path):
+    path = tmp_path / "ledger.sqlite"
+    led = Ledger(path, git_commit="t")
+    for i in range(3):
+        led.append(Veto(f"2026-03-02-{i:04d}", T0.isoformat(), "risk", "r"))
+    led.db.execute("DROP TABLE chain_head")
+    led.db.commit()
+    led.close()
+    old = Ledger(path, read_only=True)
+    assert old.verify() == (True, None)               # nothing to compare with: no false alarm
+    again = Ledger(path, git_commit="t")              # the writer anchors the current tail
+    again.append(Veto("2026-03-02-0009", T0.isoformat(), "risk", "r"))
+    again.db.execute("DELETE FROM events WHERE seq = 4")
+    again.db.commit()
+    assert not Ledger(path, read_only=True).verify()[0]
 
 
 def test_sequential_writers_on_one_file_keep_a_single_chain(tmp_path):
@@ -378,8 +426,11 @@ def _peeking_spec():
     return simple_spec(long="close < shift(close, -3)")
 
 
-def test_the_detector_catches_a_rule_that_peeks_at_the_future():
-    """Negative control: with a deliberately peeking rule the full-history and cut-history signals differ."""
+def test_the_detector_catches_a_rule_that_peeks_at_the_future(monkeypatch):
+    """Negative control: with a deliberately peeking rule the full-history and cut-history signals differ.
+    The rule language now refuses negative counts (H3), so the unchecked ``shift`` is put back for this test."""
+    from tradex.strategy import expr
+    monkeypatch.setitem(expr.FUNCS, "shift", lambda x, n=1: x.shift(int(n)))
     spec = _peeking_spec()
     bars = synthetic_bars(220, seed=1)
     full = compute_signals(spec, bars).long_entry
@@ -387,8 +438,8 @@ def test_the_detector_catches_a_rule_that_peeks_at_the_future():
     assert diffs
 
 
-@known_gap("H3", "the rule language accepts shift()/rising()/falling() with a negative count, i.e. future bars")
-@pytest.mark.parametrize("rule", ["close < shift(close, -3)", "rising(close, -2)", "falling(close, -1)"])
+@pytest.mark.parametrize("rule", ["close < shift(close, -3)", "rising(close, -2)", "falling(close, -1)",
+                                  "rising(close, 0)", "close > shift(close, 1.5)", "rolling_max(close, -5) > 0"])
 def test_h3_rules_cannot_reference_future_bars(rule):
     from conftest import simple_spec
     from tradex.strategy import expr

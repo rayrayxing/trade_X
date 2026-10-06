@@ -1,17 +1,16 @@
 # Profit upgrades: wiring patches (for Ray)
 
 The new modules in `tradex/profit/` are complete and tested on their own. They change nothing in the running system until the
-core calls them. That wiring is here as patches so the files it touches are reviewed by their owners. Nothing here is applied.
+core calls them. That wiring is here as patches so the files it touches are reviewed by their owners. Nothing here is applied. (`core-wiring.patch` was reviewed and applied as a commit on 5 Oct, see the end of this file.)
 Each patch is checked by `tests/profit/test_profit_patches.py`: it applies the patch to a scratch copy and runs the patch's own
 tests plus the existing suites around the files it changes. Check one yourself with `git apply --check patches/ov-exits/<file>`.
 
 | Patch | Touches | Protected? | Needs |
 |---|---|---|---|
-| `core-wiring.patch` | `tradex/core/loop.py`, `tradex/core/replay.py`, `tradex/runtime/build.py`, new `tests/test_profit_wiring.py` | no | the core's owner |
 | `dashboard-gate-verdicts.patch` | `tradex/dashboard/views.py`, `tradex/dashboard/static/app.js` | no | the dashboard's owner |
 | `es-tail-count.patch` | `tradex/risk/exposure.py`, new `tests/test_es_tail_count.py` | **yes** | Ray |
 
-## core-wiring.patch
+## What the core wiring does (applied)
 
 Adds one optional argument, `profit=None`, to `TradingCore`, `build_replay_core`/`run_replay` and `build_runtime`. With `profit=None`
 (the default) nothing changes, and a `ProfitHooks()` with nothing switched on yields the identical decision digest (tested). The
@@ -88,3 +87,17 @@ lengths; nothing else. The ruin radar already uses the corrected count.
 shrinks the gate's quantity by the same factor again (`shrink_qty(verdict.qty, factor)`). A `shrink 0.5` from an agent therefore sizes at about
 0.25. `tests/test_core_actions.py` does not cover the at-gate path. The vol-target factor in this patch is applied once, after the gate, so it
 does not compound with this; the agent path is the core owner's to fix.
+
+## Applied: core-wiring (reviewed 5 Oct)
+
+Reviewed and applied as its own commit on top of the fix for the double agent shrink. With `profit=None` nothing changes, and a
+`ProfitHooks()` with nothing on yields the identical digest (tested). Changes made while applying it:
+
+- It sat on the old size code, where an agent's shrink factor also went into the gate and then shrank the quantity a second time. The
+  fix landed first: the gate now gets only the calendar's halving, and an agent's shrink applies once, after the gate. Vol targeting
+  multiplies the quantity after that, so each of the three factors acts once.
+- The agent's "leaves no size" check now runs before vol targeting, so a quantity an agent shrank to zero is blocked as `agent`, not
+  as `vol_target`.
+- `ProfitHooks.size_factor` documented how it is applied: after the gate, to the approved size, not inside it.
+- `CalibratedCosts` calls the base model's `fill`, so a strict paper/live cost model (`OandaFxCosts(mode=..., spread_source=...)`) still
+  refuses to price a fill without a measured spread.

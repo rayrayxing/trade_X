@@ -1,4 +1,4 @@
-"""The single object the core calls (wiring in patches/ov-exits/core-wiring.patch).
+"""The single object the core calls (``TradingCore(..., profit=hooks)``).
 
 Everything here is optional and off by default: a core built with ``profit=None`` behaves exactly as before.
 Each method takes plain values and returns plain values, so the core keeps ownership of every order, and
@@ -6,8 +6,8 @@ the risk gate keeps ownership of every size:
 
 - ``annotate_plan(plan)``: the plan with a calibrated probability and EV when the model is calibrated and beats
   the raw base rate out of sample, and the exit ladder written into its invalidation text; prices are never touched.
-- ``size_factor(...)``: a number in (0, 1] for the gate's existing ``size_factor`` argument (vol targeting can only
-  shrink through it; the gate takes the minimum with any agent shrink).
+- ``size_factor(...)``: a number in (0, 1] the core multiplies into the quantity the gate approved, after any agent
+  shrink. Vol targeting can only shrink, and never sizes above the gate.
 - ``attach_target(plan)``: the take-profit to attach to the entry order. With partial targets configured it is
   the LAST target, so a venue-side order does not close the whole position at target 1 before the engine has
   taken its partial.
