@@ -180,6 +180,7 @@ class TradingCore:
     def on_bar_close(self, tf: str, ts: pd.Timestamp) -> None:
         """Run everything for the ``tf`` bars that closed at ``ts``. Idempotence across
         restarts is the scheduler's job (jobs table); this call does the work once."""
+        self._apply_commands(ts)                  # /pause and /flatten must work even when no bar closed (dead feed)
         d = duration(tf)
         subscribed = {u for s in self.strategies if s.signal_tf == tf for u in s.universe}
         todo = []

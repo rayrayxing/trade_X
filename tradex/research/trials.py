@@ -81,10 +81,29 @@ class TrialLedger:
                           "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
 
     def count(self, strategy_id: str) -> int:
-        """Distinct parameter sets ever evaluated for this strategy (the DSR's N)."""
+        """Distinct (parameter set, data) pairs ever evaluated for this strategy (the DSR's N): the same parameters
+        on other data is another trial; a re-run on the same data is not."""
         with self._conn() as c:
-            return int(c.execute("SELECT COUNT(DISTINCT params_hash) FROM trials WHERE strategy_id = ?",
-                                 (strategy_id,)).fetchone()[0])
+            return int(c.execute("SELECT COUNT(DISTINCT params_hash || '|' || COALESCE(data_key, '')) FROM trials "
+                                 "WHERE strategy_id = ?", (strategy_id,)).fetchone()[0])
+
+    def sharpe_variance(self, strategy_id: str) -> float:
+        """Variance of the trial Sharpes over everything ever recorded for the strategy: within each window of each
+        data set the spread across its parameter sets (latest value per set), averaged over windows. Zero when no
+        window holds two parameter sets. Re-running one parameter set cannot shrink it."""
+        with self._conn() as c:
+            rows = c.execute("SELECT COALESCE(data_key, ''), COALESCE(fold, -1), COALESCE(window_start, ''), "
+                             "COALESCE(window_end, ''), params_hash, sharpe FROM trials "
+                             "WHERE strategy_id = ? AND sharpe IS NOT NULL ORDER BY id", (strategy_id,)).fetchall()
+        groups: dict[tuple, dict[str, float]] = {}
+        for *key, ph, sr in rows:
+            groups.setdefault(tuple(key), {})[ph] = float(sr)       # later rows replace earlier ones
+        vs = []
+        for g in groups.values():
+            if len(g) > 1:
+                m = sum(g.values()) / len(g)
+                vs.append(sum((x - m) ** 2 for x in g.values()) / (len(g) - 1))
+        return float(sum(vs) / len(vs)) if vs else 0.0
 
     def runs(self, strategy_id: str) -> int:
         with self._conn() as c:

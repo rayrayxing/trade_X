@@ -38,3 +38,11 @@ def plan(did="2026-03-02-0001", symbol="EUR_USD", direction=1, entry=1.10, stop=
 
 def verdict(did="2026-03-02-0001", qty=1000.0, outcome="accepted") -> Verdict:
     return Verdict(did, T0.isoformat(), outcome, qty, 10.0, 0.1, [], {}, f"{did}-v")
+
+
+def recorded(df: pd.DataFrame) -> pd.DataFrame:
+    """Test bars standing in for what a real feed returned: the synthetic provenance tag is dropped, the way a
+    recorded response would arrive. Only for tests of the live wiring; paper/live refuse tagged frames."""
+    out = df.copy()
+    out.attrs.pop("origin", None)
+    return out

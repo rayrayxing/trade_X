@@ -51,7 +51,7 @@ def test_default_config_all_categories_on_proxy():
     cfg = yaml.safe_load(DEFAULT_CONFIG.read_text())
     assert set(cfg["categories"]) == set(CATEGORIES)
     assert all(c["route"] == "proxy" for c in cfg["categories"].values())
-    assert cfg["timeout_s"] == 20
+    assert cfg["timeout_s"] == 10 and cfg["total_budget_s"] == 20
 
 
 def test_records_actual_model_not_route(tmp_path):
@@ -65,7 +65,7 @@ def test_records_actual_model_not_route(tmp_path):
     assert row["tokens_in"] == 7 and row["tokens_out"] == 3 and row["ok"] == 1
     assert row["prompt_hash"] == h("the promptsys") and row["response_hash"] == h("ok")
     assert "pk" not in json.dumps([dict(x) for x in rows(mb)])
-    assert http.calls[0][0] == "http://proxy.local/v1/chat/completions" and http.calls[0][3] == 20
+    assert http.calls[0][0] == "http://proxy.local/v1/chat/completions" and http.calls[0][3] == 10
 
 
 def test_primary_killed_fallback_answers(tmp_path):

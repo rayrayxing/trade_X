@@ -68,13 +68,30 @@ def is_quiet(now: datetime) -> bool:
     return t >= QUIET_START or t < QUIET_END
 
 
-def render(kind: str, d: dict[str, Any]) -> tuple[str, bool] | None:
-    """(text, is_fault) for a ledger row, or None when the row is not alert-worthy."""
+def _num(x: float) -> str:
+    return f"{x:.5g}"
+
+
+def _why(plan: dict[str, Any]) -> str:
+    """Stop, targets and the reason for an entry, from the plan the order carries out."""
+    side = "long" if plan.get("direction", 1) > 0 else "short"
+    tg = ", ".join(_num(t) for t in plan.get("targets", [])) or "none"
+    why = (f"why: {side} on {', '.join(plan.get('families', [])) or 'n/a'} "
+           f"({', '.join(plan.get('strategies', [])) or 'n/a'}); p(target) {plan.get('p_target', 0):.0%}, "
+           f"reward/risk {plan.get('reward_risk', 0):.1f}, expected {plan.get('ev_r', 0):+.2f}R after costs; "
+           f"exit by bar {plan.get('max_bars', '?')}: {plan.get('invalidation', '')}")
+    return f"\n   stop {_num(plan['stop'])}, targets {tg}\n   {why}"
+
+
+def render(kind: str, d: dict[str, Any], plan: dict[str, Any] | None = None) -> tuple[str, bool] | None:
+    """(text, is_fault) for a ledger row, or None when the row is not alert-worthy. ``plan`` is the TradePlan
+    payload an entry order carries out, when the ledger has it."""
     did = d.get("decision_id", "")
     if kind == "order":
         side = "BUY" if d["side"] > 0 else "SELL"
         px = f" @ {d['price']}" if d.get("price") is not None else ""
-        return f"ORDER {side} {d['qty']:g} {d['symbol']} {d['order_type']}{px} ({d['purpose']}) [{did}]", False
+        more = _why(plan) if plan and d.get("purpose") == "entry" else ""
+        return f"ORDER {side} {d['qty']:g} {d['symbol']} {d['order_type']}{px} ({d['purpose']}) [{did}]{more}", False
     if kind == "fill":
         side = "bought" if d["side"] > 0 else "sold"
         return f"FILL {side} {d['qty']:g} {d['symbol']} @ {d['price']} fees ${d['fees_usd']:.2f} [{did}]", False
@@ -93,7 +110,7 @@ def render(kind: str, d: dict[str, Any]) -> tuple[str, bool] | None:
 class TelegramService:
     def __init__(self, ledger_path: str | Path, token: str | None = None, chat_id: int | str | None = None,
                  transport: Transport | None = None, now: Callable[[], datetime] | None = None,
-                 poll_timeout: int = 10, backfill: bool = True):
+                 poll_timeout: int = 10, backfill: bool = False):
         if transport is None:
             if token is None:
                 from tradex import secrets  # lazy: tests inject everything
@@ -125,7 +142,8 @@ class TelegramService:
                             "(SELECT seq FROM telegram_sent) ORDER BY seq", ALERT_KINDS)
         sent = 0
         for r in rows:
-            out = render(r["kind"], json.loads(r["payload"]))
+            body = json.loads(r["payload"])
+            out = render(r["kind"], body, self._plan_for(body) if r["kind"] == "order" else None)
             with self.mb._lock, self.mb.db:
                 cur = self.mb.db.execute("INSERT OR IGNORE INTO telegram_sent (seq, sent_at) VALUES (?,?)",
                                          (r["seq"], self.now().isoformat()))
@@ -151,6 +169,11 @@ class TelegramService:
                     self.mb.db.execute("DELETE FROM telegram_sent WHERE seq=?", (r["seq"],))
                 break
         return sent
+
+    def _plan_for(self, order: dict[str, Any]) -> dict[str, Any] | None:
+        got = self.mb.read("SELECT payload FROM events WHERE kind='plan' AND decision_id=? ORDER BY seq DESC LIMIT 1",
+                           (order.get("decision_id"),))
+        return json.loads(got[0]["payload"]) if got else None
 
     def _dedupe_fault(self, text: str) -> str | None:
         """The same fault text is sent once per FAULT_REPEAT_S; the next one after that says how many it covers."""

@@ -314,7 +314,6 @@ def test_pause_stops_new_entries_but_keeps_virtual_books_running():
     assert [o for o in led.rows(kind="order") if o["book"].startswith("virtual:")]
 
 
-@known_gap("G3", "commands are applied inside on_bar_close after the 'no bars closed' early return: a dead feed blocks /flatten")
 def test_g3_pause_is_applied_even_when_no_bar_arrives():
     frames = _stock_frames()
     start = frames["AAA"].index[260]
@@ -345,6 +344,8 @@ class OandaPracticeHistory:
     def __init__(self):
         from test_runtime_core import _fx_frames
         self.frames = _fx_frames()
+        for df in self.frames.values():
+            df.attrs["origin"] = "synthetic"          # what a synthetic generator leaves on its frames
 
     def get_bars(self, symbol, tf, start, end):
         df = self.frames[symbol]
@@ -374,18 +375,15 @@ def test_live_refuses_a_provider_whose_class_name_says_synthetic(_reset_run_mode
         _live_build(SyntheticHistory())
 
 
-@known_gap("G4", "the guard checks provider names only: synthetic frames behind an innocent class name run live")
 def test_g4_live_refuses_synthetic_frames_from_an_innocently_named_provider(_reset_run_mode):
     assert raised((SyntheticDataRefused, RealDataMissing), _live_build, OandaPracticeHistory())
 
 
-@known_gap("G4", "require_present only tests for empty/NaN, not for provenance: synthetic frames count as real data")
 def test_g4_require_present_rejects_synthetic_frames_in_live():
     df = synthetic_bars(50, seed=1)
     assert raised((SyntheticDataRefused, RealDataMissing), require_present, "live", df, "AAA history")
 
 
-@known_gap("G4", "BarStore.append accepts any frame in live mode; nothing carries the data's origin")
 def test_g4_bar_store_in_live_refuses_synthetic_appends():
     store = BarStore("D1", {}, ReplayClock(T0))
     store.live = True
@@ -406,13 +404,11 @@ class _FreshSource:
         raise RateMissing(f"no fresh quote for {symbol}")
 
 
-@known_gap("G5", "SeriesRates returns the last point of a series however old it is, in live mode too")
 @pytest.mark.parametrize("mode", ["paper", "live"])
 def test_g5_series_rates_refuse_a_six_year_old_point_in_live(mode):
     assert raised((MissingRate, RateMissing), SeriesRates({"EUR": OLD}, mode).usd_per_unit, "EUR", NOW)
 
 
-@known_gap("G5", "costs.models.usd_per_unit takes the last supplied-series point at any age even in paper/live")
 def test_g5_supplied_series_is_not_trusted_when_it_is_years_old(_reset_run_mode):
     cm.configure_run_mode("live", _FreshSource())
     assert raised((MissingRate, RateMissing), cm.usd_per_unit, "EUR", NOW, {"EUR": OLD})
@@ -447,7 +443,6 @@ class _Runaway(Exception):
     pass
 
 
-@known_gap("S1", "a 401 from the stream is an OSError, so PriceStream retries a bad token forever")
 def test_s1_stream_stops_on_an_auth_failure():
     def connect():
         raise urllib.error.HTTPError("https://stream-fxpractice.oanda.com", 401, "Unauthorized", {}, None)
@@ -471,7 +466,6 @@ def test_s1_stream_stops_on_an_auth_failure():
 
 # --- S2: logs and secrets ---------------------------------------------------------------------------------
 
-@known_gap("S2", "setup_logging (the secret scrubber) is never called outside tests: production logs are unscrubbed")
 def test_s2_the_cli_entry_point_switches_the_scrubber_on():
     calls = []
     for py in (ROOT / "tradex").rglob("*.py"):
@@ -491,7 +485,6 @@ class _Keyring:
         return self.d.get(name)
 
 
-@known_gap("S2", "any CI env var switches secrets.get to environment variables, so a stray CI=1 on Ray's Mac overrides the Keychain")
 def test_s2_a_bare_ci_variable_does_not_override_the_keychain(monkeypatch):
     monkeypatch.setenv("CI", "1")
     monkeypatch.delenv("TRADEX_ALLOW_ENV_SECRETS", raising=False)

@@ -42,4 +42,5 @@ def synthetic_bars(
     )
     df.index = df.index.astype("datetime64[ns, UTC]")
     df.index.name = "ts"
+    df.attrs["origin"] = "synthetic"          # provenance tag: paper/live refuse frames that carry it (tradex.data.guard)
     return df

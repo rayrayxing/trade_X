@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from tradex.core.ledger import BUSY_MS, SCHEMA, Ledger
+from tradex.core.ledger import BUSY_MS, SCHEMA, Ledger, migrate
 from tradex.core.records import AgentOutput
 
 ALLOWED_ACTIONS = ("veto", "shrink", "close", "flag")
@@ -64,6 +64,7 @@ class Mailbox:
         if init_schema:  # IF NOT EXISTS only: safe to run next to the core
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.executescript(SCHEMA + extra_schema)
+            migrate(self.db)
         self.db.set_authorizer(_make_authorizer(WRITABLE | set(extra_writable)))
 
     def add_command(self, time: str, source: str, command: str, args: dict | None = None) -> int:

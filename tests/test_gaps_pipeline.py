@@ -89,12 +89,10 @@ def _gateway(tmp_path):
     return Gateway(mb, http=_ok_http, secret=SECRETS.__getitem__), mb
 
 
-@known_gap("G8", "config/models.yaml gives a 45 s total budget; the review asks for 20 s")
 def test_g8_total_budget_is_at_most_20_seconds():
     assert yaml.safe_load(DEFAULT_CONFIG.read_text())["total_budget_s"] <= 20
 
 
-@known_gap("G8", "Gateway.call logs after answering; a logging failure escapes and kills the submit() worker thread")
 def test_g8_call_never_raises_even_when_the_call_log_cannot_be_written(tmp_path):
     g, mb = _gateway(tmp_path)
     mb.close()
@@ -114,7 +112,6 @@ def test_gateway_budget_stops_a_slow_chain_of_fallbacks(tmp_path):
     assert not res.ok and clock["t"] <= g.budget + 19.0
 
 
-@known_gap("G8", "only hashes of the prompt and response are stored, so an agent call can never be replayed")
 def test_g8_the_prompt_text_is_stored_for_replay(tmp_path):
     g, mb = _gateway(tmp_path)
     g.call("critic", "PROMPT-MARKER-7731 review the EUR_USD plan")
@@ -123,7 +120,6 @@ def test_g8_the_prompt_text_is_stored_for_replay(tmp_path):
     assert "PROMPT-MARKER-7731" in stored
 
 
-@known_gap("G8", "no DeepSeek route or provider detection")
 def test_g8_deepseek_is_recognised_as_a_provider():
     assert infer_provider("deepseek-chat", {}, "proxy") == "deepseek"
 
@@ -133,7 +129,7 @@ def test_gateway_records_who_actually_answered_not_the_route(tmp_path):
     res = g.call("critic", "plan?")
     row = mb.read("SELECT * FROM agent_calls")[0]
     assert res.ok and row["provider"] == "anthropic" and row["model"] == "claude-sonnet-5-5"
-    assert row["prompt_hash"] and row["response_hash"] and "analysis" not in json.dumps(dict(row))
+    assert row["prompt_hash"] and row["response_hash"]
 
 
 # --- G9: Telegram -----------------------------------------------------------------------------------------
@@ -154,7 +150,6 @@ def _tg(path, **kw):
     return TelegramService(path, token="x", chat_id=111, transport=f, **kw), f
 
 
-@known_gap("G9", "TelegramService(backfill=True) is the default: the first start alerts every historical ledger row")
 def test_g9_first_start_does_not_replay_the_whole_history(tmp_path):
     p = tmp_path / "l.db"
     led = Ledger(p, git_commit="t")
@@ -176,7 +171,6 @@ def test_alerts_are_sent_once_across_restarts(tmp_path):
     assert again.send_alerts() == 0 and fake2.sent == []
 
 
-@known_gap("G9", "alerts are rendered from order/fill/close rows only: no stop, no targets, no justification")
 def test_g9_an_entry_alert_carries_stop_targets_and_why(tmp_path):
     p = tmp_path / "l.db"
     led = Ledger(p, git_commit="t")
@@ -252,7 +246,6 @@ def test_rerunning_the_same_search_keeps_the_trial_count(_data, tmp_path):
     assert b.oos["expected_max_sharpe_annual"] == pytest.approx(a.oos["expected_max_sharpe_annual"])
 
 
-@known_gap("G11", "the DSR's trial-Sharpe variance comes from the current run only: re-running ONE parameter set zeroes the deflation")
 @pytest.mark.parametrize("narrow", [WalkForwardConfig(n_folds=3, grid_points=1),
                                     WalkForwardConfig(n_folds=3, grid_points=3, max_trials=1)])
 def test_g11_rerunning_one_parameter_set_cannot_switch_deflation_off(_data, tmp_path, narrow):
@@ -264,7 +257,6 @@ def test_g11_rerunning_one_parameter_set_cannot_switch_deflation_off(_data, tmp_
     assert one.oos["expected_max_sharpe_annual"] > 0              # ... but its variance term is not
 
 
-@known_gap("S5", "a trial is its parameter hash only: the same parameters on different data are one trial")
 def test_s5_trial_count_distinguishes_the_data(tmp_path):
     led = TrialLedger(tmp_path / "t.sqlite")
     led.record("s", 1, {"a": 1}, run_id="r1", data_key="stocks-2019-2023")
@@ -272,7 +264,6 @@ def test_s5_trial_count_distinguishes_the_data(tmp_path):
     assert led.count("s") == 2
 
 
-@known_gap("S5", "a strategy at version 3 with an empty trial ledger silently restarts N at its grid size")
 def test_s5_empty_ledger_for_a_revised_strategy_is_not_silent(_data, tmp_path):
     spec = _spec()
     spec.version = 3

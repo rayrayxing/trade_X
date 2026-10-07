@@ -10,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 
 from tradex.core.interfaces import Clock
+from tradex.data.guard import refuse_stand_in
 from tradex.timeframes import OHLCV, duration, resample
 
 
@@ -18,6 +19,7 @@ class BarStore:
         self.base_tf = base_tf
         self.bar = duration(base_tf)
         self.clock = clock
+        self.live = False                      # paper/live: appended bars must not carry a synthetic/CSV/cached origin
         self.frames: dict[str, pd.DataFrame] = {s: df.sort_index() for s, df in (frames or {}).items()}
         self._higher: dict[tuple[str, str], tuple[int, pd.DataFrame]] = {}
 
@@ -26,6 +28,8 @@ class BarStore:
 
     def append(self, symbol: str, bars: pd.DataFrame) -> None:
         """Add closed base-timeframe bars (index = open time) for ``symbol``."""
+        if self.live:
+            refuse_stand_in("live", bars, f"{symbol} live bar")
         old = self.frames.get(symbol)
         new = bars[OHLCV] if old is None else pd.concat([old, bars[OHLCV]])
         self.frames[symbol] = new[~new.index.duplicated(keep="last")].sort_index()
