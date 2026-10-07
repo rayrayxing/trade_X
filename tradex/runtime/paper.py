@@ -89,8 +89,28 @@ def _logged_http(http: Callable, account_id: str) -> Callable:
             where = url.split("/v3/", 1)[-1].replace(account_id, "<account>")
             log.warning("oanda %s /%s -> %s %s %s", method, where, status,
                         payload.get("errorCode", ""), payload.get("errorMessage", ""))
+        if status == 401 and method == "GET":
+            # A long-running run gets 401s that fresh processes never see (7 Oct). Compare the
+            # token this process sent with the Keychain's (8-hex fingerprints only), then retry
+            # the read once with the Keychain token: it either heals the call or names the cause.
+            from tradex import secrets
+            try:
+                fresh = secrets.get("oanda_token")
+            except secrets.MissingSecret:
+                log.warning("oanda 401: no Keychain token to retry with")
+                return status, payload
+            sent = headers.get("Authorization", "").removeprefix("Bearer ")
+            retry_headers = {**headers, "Authorization": f"Bearer {fresh}"}
+            status, payload = http(method, url, retry_headers, body, **kw)
+            log.warning("oanda 401 retry: sent token %s, keychain token %s -> %s %s", _fp(sent), _fp(fresh),
+                        status, payload.get("errorMessage", "") if status >= 300 else "ok")
         return status, payload
     return call
+
+
+def _fp(token: str) -> str:
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()[:8] if token else "none"
 
 
 def _moomoo(acc, guard, ctx: dict):
