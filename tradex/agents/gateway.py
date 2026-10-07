@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time as _time
 from dataclasses import dataclass, field
@@ -24,6 +25,8 @@ from typing import Any, Callable
 import yaml
 
 from tradex.core.inbox import Mailbox
+
+log = logging.getLogger(__name__)
 
 CATEGORIES = ("scout_analyst", "position_reviewer", "chart_reader", "researcher", "red_team",
               "incident_analyst", "strategy_designer", "critic")
@@ -76,7 +79,7 @@ def infer_provider(model: str | None, headers: dict[str, str], route: str) -> st
             return headers[k].lower()
     m = (model or "").lower()
     for prefix, name in (("claude", "anthropic"), ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"),
-                         ("o4", "openai"), ("gemini", "google")):
+                         ("o4", "openai"), ("gemini", "google"), ("deepseek", "deepseek")):
         if m.startswith(prefix) or f"/{prefix}" in m:
             return name
     return route if route != "proxy" else "unknown(proxy)"  # a direct route answers as itself
@@ -173,7 +176,10 @@ class Gateway:
             plan = self.plan(category)
         except GatewayError as exc:
             res.error = str(exc)
-            self._log(res, prompt)
+            try:
+                self._log(res, prompt, "", prompt, system)
+            except Exception:  # noqa: BLE001
+                log.warning("agent call log could not be written", extra={"category": category})
             return res
         for route, model in plan:
             left = self.budget - (self.clock() - start)
@@ -197,7 +203,10 @@ class Gateway:
         if not res.ok:
             res.error = "skipped: " + "; ".join(f"{a['route']} {a.get('error')}" for a in res.attempts)
             res.latency_ms = int((self.clock() - start) * 1000)
-        self._log(res, prompt + system, res.text)
+        try:
+            self._log(res, prompt + system, res.text, prompt, system)
+        except Exception:  # noqa: BLE001 - a call log that cannot be written must never take the caller down
+            log.warning("agent call log could not be written", extra={"category": category})
         return res
 
     def submit(self, category: str, prompt: str, on_done: Callable[[AgentResult], None] | None = None,
@@ -214,13 +223,14 @@ class Gateway:
         t.start()
         return t
 
-    def _log(self, r: AgentResult, prompt: str, response: str = "") -> None:
+    def _log(self, r: AgentResult, prompt: str, response: str = "", prompt_text: str = "", system: str = "") -> None:
         if self.mb is None:
             return
         with self.mb._lock, self.mb.db:
             self.mb.db.execute(
                 "INSERT INTO agent_calls (time, category, route, provider, model, ok, latency_ms, tokens_in,"
-                " tokens_out, prompt_hash, response_hash, error, attempts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " tokens_out, prompt_hash, response_hash, prompt, response, error, attempts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (self.now().isoformat(), r.category, r.route, r.provider, r.model, int(r.ok), r.latency_ms,
-                 r.tokens_in, r.tokens_out, h(prompt), h(response) if response else None, r.error or None,
+                 r.tokens_in, r.tokens_out, h(prompt), h(response) if response else None,
+                 (f"[system] {system}\n" if system else "") + prompt_text, response or None, r.error or None,
                  json.dumps(r.attempts)))

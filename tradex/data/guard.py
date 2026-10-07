@@ -25,6 +25,21 @@ class RealDataMissing(RuntimeError):
     """Real data needed for a decision is absent. Block the trade and alert; do not fall back."""
 
 
+def origin_of(obj) -> str | None:
+    """The provenance tag a frame or series carries (``attrs['origin']``), if any. Best effort: pandas operations
+    that build new frames (concat, resample) drop it, so check data where it enters, not downstream."""
+    attrs = getattr(obj, "attrs", None)
+    return attrs.get("origin") if isinstance(attrs, dict) else None
+
+
+def refuse_stand_in(mode: str, obj, what: str) -> None:
+    """In paper/live, refuse a frame tagged as synthetic, CSV or cached whatever class it came from."""
+    origin = origin_of(obj)
+    if mode in STRICT and origin is not None and any(tag in str(origin).lower() for tag in _STAND_INS):
+        _alert(f"refused {origin} data for {what}", mode)
+        raise SyntheticDataRefused(f"{mode} mode refuses {origin} data ({what})")
+
+
 def _label(provider) -> str:
     if isinstance(provider, str):
         return provider.lower()
@@ -56,6 +71,7 @@ def require_present(mode: str, value, what: str):
     if missing and mode in STRICT:
         _alert(f"missing {what}", mode)
         raise RealDataMissing(f"{mode}: no real data for {what}")
+    refuse_stand_in(mode, value, what)
     return value
 
 

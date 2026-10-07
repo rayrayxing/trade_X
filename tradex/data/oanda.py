@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -28,6 +29,10 @@ GRANULARITY = {"M1": "M1", "M5": "M5", "M15": "M15", "M30": "M30", "H1": "H1", "
 # Oanda quotes these as CCY_USD (True) or USD_CCY (False)
 _USD_PAIR = {"EUR": "EUR_USD", "GBP": "GBP_USD", "AUD": "AUD_USD", "NZD": "NZD_USD",
              "JPY": "USD_JPY", "CHF": "USD_CHF", "CAD": "USD_CAD", "SGD": "USD_SGD"}
+
+
+class StreamAuthError(RuntimeError):
+    """The price stream rejected the token (401/403). Retrying cannot fix it, so the loop stops."""
 
 
 class LiveHostRefused(RuntimeError):
@@ -183,6 +188,10 @@ class PriceStream:
                 reason = "stream ended"
             except LiveHostRefused:
                 raise
+            except urllib.error.HTTPError as exc:
+                if exc.code in (401, 403):               # a rejected token never recovers by retrying
+                    raise StreamAuthError(f"Oanda price stream rejected the credentials (HTTP {exc.code})") from exc
+                reason = type(exc).__name__
             except (OSError, ValueError) as exc:        # timeouts, resets, HTTP errors, torn JSON lines
                 reason = type(exc).__name__
             self.reconnects += 1

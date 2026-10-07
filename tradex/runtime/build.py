@@ -282,6 +282,7 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     tfs = sorted({s.signal_tf for s in specs}, key=duration)
     base_tf = min(tfs[0], MAX_BUILT_TF, key=duration)
     store = BarStore(base_tf, {}, clock)
+    store.live = True                             # paper/live: appended bars are checked for a synthetic origin
     symbols = sorted({u for s in specs for u in s.universe if not u.startswith("$")})
     ac_of = {u: s.asset_class for s in specs for u in s.universe}
     es = None

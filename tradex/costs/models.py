@@ -125,6 +125,7 @@ class RateSource(Protocol):
     def spread_pips(self, symbol: str, ts: pd.Timestamp | None = None) -> float: ...
 
 
+SERIES_MAX_AGE = pd.Timedelta(days=5)         # paper/live: a supplied rate series older than this is not used
 _RUN_MODE = "backtest"
 _RATE_SOURCE: RateSource | None = None
 
@@ -260,7 +261,10 @@ def usd_per_unit(ccy: str, ts: pd.Timestamp | None = None, fx: dict[str, pd.Seri
         s = fx[ccy]
         s = s[s.index <= ts] if ts is not None else s
         if len(s):
-            return float(s.iloc[-1])
+            if _RUN_MODE in STRICT_MODES and ts is not None and ts - s.index[-1] > SERIES_MAX_AGE:
+                pass                                            # too old to be a current rate: the live source answers
+            else:
+                return float(s.iloc[-1])
     if _RUN_MODE in STRICT_MODES:
         return _RATE_SOURCE.usd_per_unit(ccy, ts)               # raises RateMissing; no fallback
     return APPROX_USD_PER_UNIT[ccy]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import pandas as pd
 from tradex.backtest import metrics
 from tradex.backtest.engine import EngineConfig, run_backtest
 from tradex.backtest.validation import ValidationReport, WalkForwardConfig, walk_forward
+from tradex.ops.log import setup_logging
 from tradex.data.providers import AlpacaProvider, CachedProvider, CsvProvider, MassiveProvider, OandaProvider
 from tradex.strategy.spec import StrategySpec, load_dir
 
@@ -61,6 +63,9 @@ def load_records(reports: Path, reference_risk_pct: float = 1.0):
     return recs
 
 
+_LOGGED = {"run", "replay", "telegram", "dashboard", "setup", "fetch", "compare-feeds"}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="tradex")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -108,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     tg = sub.add_parser("telegram", help="Telegram alerts and commands (long polling, no inbound port)")
     tg.add_argument("action", choices=["run"])
     tg.add_argument("--ledger", default="data/ledger.db")
-    tg.add_argument("--skip-history", action="store_true", help="do not alert on rows already in the ledger")
+    tg.add_argument("--backfill", action="store_true", help="also alert on rows already in the ledger (default: only new rows)")
 
     db = sub.add_parser("dashboard", help="read-only web dashboard over the ledger (needs the [dashboard] extra)")
     db.add_argument("--ledger", default="data/ledger/live.sqlite")
@@ -163,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--ledger", default="data/ledger/live.sqlite", help="the ledger a real (non-dry) run writes")
 
     a = ap.parse_args(argv)
+    if a.cmd in _LOGGED:
+        setup_logging(os.environ.get("TRADEX_LOG_PATH", "data/logs/tradex.jsonl"))   # the secret scrubber is on for every long-running command
 
     if a.cmd == "run":
         return _run(a)
@@ -183,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "telegram":
         from tradex.notify.telegram import TelegramService
-        TelegramService(a.ledger, backfill=not a.skip_history).run()
+        TelegramService(a.ledger, backfill=a.backfill).run()
         return 0
     if a.cmd in ("replay", "why", "verify-ledger", "filters", "command"):
         return _spine_commands(a)

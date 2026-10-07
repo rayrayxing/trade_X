@@ -128,12 +128,16 @@ def walk_forward(
     base_cfg = engine_cfg or EngineConfig()
     costs = costs or model_for(spec.asset_class)
     grid = spec.param_grid(wf.grid_points, wf.max_trials, wf.seed)
+    prior_trials = trials.count(spec.id)
     embargo = duration(spec.signal_tf) * (spec.exit.max_bars + 1)
     timeline = pd.DatetimeIndex(sorted(set().union(*[set(b.index) for b in data.values() if len(b)])))
 
     # Signals depend only on parameters, not on the window, so compute them once per parameter set.
     variants = []
     warnings: list[str] = []
+    if spec.version > 1 and prior_trials == 0:
+        warnings.append(f"trial ledger holds no earlier trials of {spec.id} although it is at version {spec.version}: "
+                        f"N restarts at this run's {len(grid)} parameter sets, so the deflation may be too light")
     for params in grid:
         s = spec.with_params(params)
         sig = {sym: compute_signals(s, bars, filter_ctx) for sym, bars in data.items() if len(bars)}
@@ -186,6 +190,7 @@ def walk_forward(
     oos = metrics.summarize(equity, trades, oos_ret) if len(equity) else metrics.trade_stats(trades)
     n_trials = max(len(grid), trials.count(spec.id))
     var = float(np.mean([np.var(x, ddof=1) for x in trial_srs if len(x) > 1])) if any(len(x) > 1 for x in trial_srs) else 0.0
+    var = max(var, trials.sharpe_variance(spec.id))         # a narrow re-run must not switch the deflation off
     oos["dsr"] = metrics.deflated_sharpe(oos_ret, n_trials, var)
     oos["expected_max_sharpe_annual"] = metrics.expected_max_sharpe(n_trials, var) * np.sqrt(metrics.PERIODS_PER_YEAR)
     oos["positive_folds"] = float(np.mean([f.test_return > 0 for f in folds])) if folds else 0.0

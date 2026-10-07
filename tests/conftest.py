@@ -1,9 +1,14 @@
+import os
+import tempfile
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from tradex.data.synthetic import synthetic_bars
 from tradex.strategy.spec import StrategySpec
+
+os.environ.setdefault("TRADEX_LOG_PATH", os.path.join(tempfile.mkdtemp(prefix="tradex-test-logs-"), "tradex.jsonl"))
 
 
 @pytest.fixture

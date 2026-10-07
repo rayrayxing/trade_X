@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     tokens_out    INTEGER,
     prompt_hash   TEXT,
     response_hash TEXT,
+    prompt        TEXT,                 -- the full text, kept for replay
+    response      TEXT,
     error         TEXT,
     attempts      TEXT NOT NULL DEFAULT '[]'
 );
@@ -103,6 +105,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_agent_payload ON jobs(agent, payload);
 """
+
+
+def migrate(db: sqlite3.Connection) -> None:
+    """Add columns that older ledger files lack (the schema above is CREATE IF NOT EXISTS only)."""
+    have = {r[1] for r in db.execute("PRAGMA table_info(agent_calls)")}
+    for col in ("prompt", "response"):         # the text itself, so an agent call can be replayed
+        if col not in have:
+            db.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT")
 
 
 def row_hash(prev_hash: str, kind: str, time: str, decision_id: str | None, payload: str,
@@ -150,6 +160,7 @@ class Ledger:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=NORMAL")
             self.db.executescript(SCHEMA)
+            migrate(self.db)
         self.db.row_factory = sqlite3.Row
         if not read_only:
             planted = [r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")]

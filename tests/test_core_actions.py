@@ -260,7 +260,7 @@ def test_fault_in_core_reaches_telegram_as_one_loud_message(tmp_path):
     c.until(lambda: c.core.brokers["ensemble"].failed)
     quiet = datetime(2026, 10, 5, 2, 0, tzinfo=timezone(timedelta(hours=8)))      # 02:00 Singapore
     fake = FakeTelegram()
-    TelegramService(path, chat_id=1, transport=fake, now=lambda: quiet).send_alerts()
+    TelegramService(path, chat_id=1, transport=fake, now=lambda: quiet, backfill=True).send_alerts()
     loud = [m for m in fake.sent if not m["disable_notification"]]
     assert len(loud) == 1 and loud[0]["text"].startswith("FAULT broker:")
     assert all(m["disable_notification"] for m in fake.sent if m is not loud[0])   # trade alerts stay quiet

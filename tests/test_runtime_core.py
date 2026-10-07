@@ -2,6 +2,7 @@
 import pandas as pd
 import pytest
 
+from gapkit import recorded
 from test_spine import _frames, _two_family_specs
 from tradex.core.interfaces import ReplayClock
 from tradex.core.ledger import Ledger
@@ -74,7 +75,8 @@ def _mixed_specs():
 
 def _fx_frames(n=1_100):
     kw = dict(tf="H1", vol=0.002, trend_strength=0.0004, regime_len=200, start="2025-01-06", business_days=False)
-    return {"EUR_USD": synthetic_bars(n, seed=5, price=1.10, **kw), "USD_JPY": synthetic_bars(n, seed=6, price=150.0, **kw)}
+    return {"EUR_USD": recorded(synthetic_bars(n, seed=5, price=1.10, **kw)),
+            "USD_JPY": recorded(synthetic_bars(n, seed=6, price=150.0, **kw))}
 
 
 def test_mixed_timeframes_run_together_and_match_live():

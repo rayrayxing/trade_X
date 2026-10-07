@@ -1,14 +1,15 @@
 # Model gateway routes. Every agent category defaults to EasyCLIProxyAPI (route "proxy").
 # To move a category to a direct key, change its `route` (e.g. anthropic). Fallbacks are
 # tried in order when the primary errors or times out; a route whose secret is missing is skipped.
-# Secrets (never in this file): proxy_base_url, proxy_api_key, anthropic_api_key, openai_api_key, google_api_key.
-timeout_s: 20            # per attempt
-total_budget_s: 45       # across all attempts of one call; then the call is skipped and logged
+# Secrets (never in this file): proxy_base_url, proxy_api_key, anthropic_api_key, openai_api_key, google_api_key, deepseek_api_key.
+timeout_s: 10            # per attempt
+total_budget_s: 20       # across all attempts of one call; then the call is skipped and logged
 
 routes:
   proxy:     {kind: openai_compat, base_url_secret: proxy_base_url, key_secret: proxy_api_key}
   anthropic: {kind: anthropic, base_url: "https://api.anthropic.com", key_secret: anthropic_api_key}
   openai:    {kind: openai_compat, base_url: "https://api.openai.com/v1", key_secret: openai_api_key}
+  deepseek:  {kind: openai_compat, base_url: "https://api.deepseek.com/v1", key_secret: deepseek_api_key}
   google:    {kind: google, base_url: "https://generativelanguage.googleapis.com", key_secret: google_api_key}
 
 # Add openai/google fallbacks with the model ids you want, e.g.

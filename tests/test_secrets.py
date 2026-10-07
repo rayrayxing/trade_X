@@ -30,6 +30,7 @@ class FakeKeyring(KeyringBackend):
 @pytest.fixture(autouse=True)
 def fake_keyring(monkeypatch):
     monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("TRADEX_ALLOW_ENV_SECRETS", raising=False)
     prev = keyring.get_keyring()
     fk = FakeKeyring()
     keyring.set_keyring(fk)
@@ -51,6 +52,8 @@ def test_env_only_in_ci(monkeypatch):
     monkeypatch.setenv("TRADEX_OANDA_TOKEN", "from-env-value")
     assert not secrets.has("oanda_token")          # ignored outside CI
     monkeypatch.setenv("CI", "true")
+    assert not secrets.has("oanda_token")          # a bare CI variable is not enough
+    monkeypatch.setenv("TRADEX_ALLOW_ENV_SECRETS", "1")
     assert secrets.get("oanda_token") == "from-env-value"
     secrets.status()  # does not raise
 

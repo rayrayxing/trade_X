@@ -13,6 +13,8 @@ import pandas as pd
 from tradex.costs.models import APPROX_USD_PER_UNIT, RateMissing
 
 LIVE_MODES = {"paper", "live"}
+STRICT = LIVE_MODES
+SERIES_MAX_AGE = pd.Timedelta(days=5)         # a supplied rate series older than a long weekend is not a current rate
 
 
 class MissingRate(LookupError, RateMissing):
@@ -33,9 +35,11 @@ def _fallback(ccy: str, mode: str) -> float:
 class SeriesRates:
     """Rates from recorded series (``{ccy: USD per unit}``, e.g. from XXX_USD closes)."""
 
-    def __init__(self, series: dict[str, pd.Series] | None = None, mode: str = "replay"):
+    def __init__(self, series: dict[str, pd.Series] | None = None, mode: str = "replay",
+                 max_age: pd.Timedelta = SERIES_MAX_AGE):
         self.series = series or {}
         self.mode = mode
+        self.max_age = max_age
 
     def usd_per_unit(self, ccy: str, ts: pd.Timestamp) -> float:
         if ccy == "USD":
@@ -44,6 +48,9 @@ class SeriesRates:
         if s is not None:
             i = s.index.searchsorted(ts, side="right")
             if i > 0:
+                if self.mode in STRICT and ts - s.index[i - 1] > self.max_age:
+                    raise MissingRate(f"{ccy}: the newest point in the supplied series is from {s.index[i - 1]} "
+                                      f"(more than {self.max_age} before {ts}); {self.mode} will not value money with it")
                 return float(s.iloc[i - 1])
         return _fallback(ccy, self.mode)
 

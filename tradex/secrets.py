@@ -1,6 +1,6 @@
 """Secret store: macOS Keychain via keyring (service "trade-x").
 
-Env vars ``TRADEX_<NAME>`` are honoured only when the ``CI`` env var is set, so a stray
+Env vars ``TRADEX_<NAME>`` are honoured only when both ``CI`` and ``TRADEX_ALLOW_ENV_SECRETS`` are set, so a stray
 variable on Ray's Mac can never silently override the Keychain. Values are never logged
 or returned by anything except ``get``; ``status`` reports only set/missing.
 """
@@ -24,6 +24,7 @@ NAMES: dict[str, str] = {
     "anthropic_api_key": "Anthropic API key",
     "openai_api_key": "OpenAI API key",
     "google_api_key": "Google API key",
+    "deepseek_api_key": "DeepSeek API key",
     "moomoo_sim_account_id": "moomoo SIMULATE account ID",
 }
 
@@ -39,7 +40,7 @@ def _check(name: str) -> str:
 
 
 def _ci() -> bool:
-    return bool(os.environ.get("CI"))
+    return bool(os.environ.get("CI")) and bool(os.environ.get("TRADEX_ALLOW_ENV_SECRETS"))
 
 
 def env_name(name: str) -> str:
