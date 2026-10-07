@@ -112,25 +112,33 @@ def rs_crash(spec: StrategySpec, cache=None):
     return out, [s for s in syms if s not in data]
 
 
-def fx_strength(spec: StrategySpec, cache=None, n: int = 63):
-    syms = _symbols(spec)
-    data = fx_bars(syms, spec.signal_tf)
+def fx_strength_columns(data: dict[str, pd.DataFrame], n: int = 63) -> dict[str, dict[str, pd.Series]]:
+    """cs_diff, cs_xs, ts_mom per pair. The live builder (tradex.runtime.columns) calls this same function."""
     strength = currency_strength({s: b["close"] for s, b in data.items()}, n)
     diff = pd.DataFrame({s: pair_strength_diff(s, strength) for s in data})
     xs = panels.xs_percentile(diff)
-    out = {s: panels.with_columns(b, {"cs_diff": diff[s], "cs_xs": xs[s], "ts_mom": b["close"].pct_change(n)})
-           for s, b in data.items()}
-    return out, [s for s in syms if s not in data]
+    return {s: {"cs_diff": diff[s], "cs_xs": xs[s], "ts_mom": b["close"].pct_change(n)} for s, b in data.items()}
+
+
+def fx_carry_columns(data: dict[str, pd.DataFrame], rates) -> dict[str, pd.DataFrame]:
+    """The carry columns plus carry_xs per pair. The live builder (tradex.runtime.columns) calls this same function."""
+    cols = {s: carry_columns(b, s, rates) for s, b in data.items()}
+    xs = panels.xs_percentile(pd.DataFrame({s: c["carry"] for s, c in cols.items()}))
+    return {s: cols[s].assign(carry_xs=xs[s]) for s in cols}
+
+
+def fx_strength(spec: StrategySpec, cache=None, n: int = 63):
+    syms = _symbols(spec)
+    data = fx_bars(syms, spec.signal_tf)
+    cols = fx_strength_columns(data, n)
+    return {s: panels.with_columns(b, cols[s]) for s, b in data.items()}, [s for s in syms if s not in data]
 
 
 def fx_carry(spec: StrategySpec, cache=None):
     syms = _symbols(spec)
     data = fx_bars(syms, spec.signal_tf)
-    rates = CsvRateSource(RATES_FILE)
-    cols = {s: carry_columns(b, s, rates) for s, b in data.items()}
-    xs = panels.xs_percentile(pd.DataFrame({s: c["carry"] for s, c in cols.items()}))
-    out = {s: panels.with_columns(b, cols[s].assign(carry_xs=xs[s])) for s, b in data.items()}
-    return out, [s for s in syms if s not in data]
+    cols = fx_carry_columns(data, CsvRateSource(RATES_FILE))
+    return {s: panels.with_columns(b, cols[s]) for s, b in data.items()}, [s for s in syms if s not in data]
 
 
 BUILDERS = {"earnings": earnings, "fomc_window": fomc_window, "regime_etf": regime_etf, "rs_crash": rs_crash,

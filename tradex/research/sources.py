@@ -86,7 +86,7 @@ class FileEventCalendar:
             rows = (yaml.safe_load(self.path.read_text()) or {}).get("events", [])
             ts = [r["time"] for r in rows if self.kind is None or r.get("kind") == self.kind]
         else:
-            df = pd.read_csv(self.path)
+            df = pd.read_csv(self.path, comment="#")
             df.columns = [str(c).strip().lower() for c in df.columns]
             if "time" not in df.columns:
                 raise ValueError(f"{self.path}: needs a 'time' column")
@@ -111,9 +111,7 @@ class CsvRateSource:
                 raise DataUnavailable(f"no rate history at {self.path}")
             t = pd.read_csv(self.path, comment="#")
             t.columns = [str(c).strip().lower() for c in t.columns]
-            t["date"] = pd.to_datetime(t["date"], utc=True)
-            self._by_ccy = {c: g.sort_values("date").drop_duplicates("date", keep="last").set_index("date")["rate"] / 100.0
-                            for c, g in t.groupby("currency")}
+            self._by_ccy = rate_steps(t)
         return self._by_ccy
 
     def currencies(self) -> list[str]:
@@ -123,7 +121,18 @@ class CsvRateSource:
         table = self._load()
         if ccy not in table:
             raise DataUnavailable(f"{self.path} has no rates for {ccy}")
-        s = table[ccy]
-        idx = pd.DatetimeIndex(index)
-        merged = s.reindex(s.index.union(idx)).ffill().reindex(idx)
-        return merged.astype(float)
+        return rates_at(table[ccy], index)
+
+
+def rate_steps(table: pd.DataFrame) -> dict[str, pd.Series]:
+    """``date,currency,rate`` (percent) -> per currency a decimal step series from each effective date (UTC).
+    Shared by the research reader and the live official-rate source so both read a table the same way."""
+    t = table.assign(date=pd.to_datetime(table["date"], utc=True))
+    return {c: g.sort_values("date").drop_duplicates("date", keep="last").set_index("date")["rate"].astype(float) / 100.0
+            for c, g in t.groupby("currency")}
+
+
+def rates_at(steps: pd.Series, index: pd.DatetimeIndex) -> pd.Series:
+    """The latest step at or before each timestamp of ``index`` (NaN before the first)."""
+    idx = pd.DatetimeIndex(index)
+    return steps.reindex(steps.index.union(idx)).ffill().reindex(idx).astype(float)

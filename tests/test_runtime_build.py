@@ -191,14 +191,14 @@ def test_a_strategy_that_reads_unbuilt_research_columns_is_held_back_once_not_fa
     carry = StrategySpec.from_dict({
         "id": "fx-carry", "version": 1, "asset_class": "forex", "universe": ["EUR_USD"], "status": "paper",
         "family": "carry", "timeframes": {"signal": "D1"},
-        "features": {"cry": {"fn": "data.column", "name": "carry"}, "xs": {"fn": "data.column", "name": "carry_xs"}},
+        "features": {"cry": {"fn": "data.column", "name": "carry"}, "xs": {"fn": "data.column", "name": "rsm_xs"}},
         "entry": {"long": "xs >= 0.7 and cry > 0", "short": "xs <= 0.3 and cry < 0"},
         "holding": {"expected_hours": 960, "crosses_rollover": True},
         "exit": {"stop_atr": 3.0, "target_r": 4.0, "max_bars": 40}})
     run, held = split_unfed(_mixed_specs() + [carry])
     assert [s.id for s in run] == ["h1-trend", "h4-mom"]
-    assert held == {"fx-carry": ["carry", "carry_xs"]}
-    assert "fx-carry needs carry, carry_xs" in held_text(held)
+    assert held == {"fx-carry": ["carry", "rsm_xs"]}                  # no live builder covers both
+    assert "fx-carry needs carry, rsm_xs" in held_text(held)
 
     rt, _, _ = _build(dry=True)                                      # plain specs: nothing held back
     assert not any(c.name == "strategies:held_back" for c in rt.checks)
@@ -227,6 +227,72 @@ def test_oanda_http_errors_are_logged_without_the_account_id(caplog):
     text = caplog.text
     assert "Insufficient authorization" in text and "sinceid?id=3" in text
     assert "101-000-SECRET" not in text and "zq9-tok-zq9" not in text
+
+
+def _fx_dir_specs():
+    from pathlib import Path
+    from tradex.strategy.spec import load_dir
+    root = Path(__file__).resolve().parents[1] / "strategies"
+    return [s for s in load_dir(root / "seeds") + load_dir(root / "proposed") if s.asset_class == "forex"]
+
+
+def test_the_four_research_fx_strategies_are_fed_live_not_held_back():
+    from tradex.runtime.build import split_unfed
+    specs = _fx_dir_specs()
+    run, held = split_unfed(specs)
+    assert held == {} and len(run) == 7
+    clock = ReplayClock(START)
+    rt = build_runtime("paper", specs, Ledger(":memory:", git_commit="t"), history={"forex": RecordedHistory()},
+                       stream=FakeStream(), quotes=QuoteBook(30, clock=clock.now), clock=clock, config=RuntimeConfig(),
+                       dry=True)
+    names = {c.name: c for c in rt.checks}
+    assert "strategies:held_back" not in names and names["strategies"].detail.startswith("7 on H1, H4, D1")
+    assert "fx-carry-trend" in names["columns"].detail and "official policy rates" in names["columns"].detail
+    assert rt.columns is not None and sorted(rt.columns.by_spec) == ["fx-carry-trend", "fx-carry-vol-filter",
+                                                                     "fx-currency-strength-momentum",
+                                                                     "fx-rate-diff-trend"]
+    assert rt.services == [] and not rt.columns.frames                   # dry: nothing fetched
+
+
+def test_a_real_build_warms_the_columns_and_signals_read_them(tmp_path):
+    import shutil
+    from pathlib import Path
+    from test_live_columns import Candles, daily_frames, official
+    from tradex.runtime.policy_rates import LivePolicyRates
+    specs = [s for s in _fx_dir_specs() if s.id in ("fx-carry-trend", "fx-currency-strength-momentum")]
+    daily = daily_frames()
+    close = pd.Timestamp("2026-10-02 00:00", tz="UTC")
+    hourly = {p: pd.DataFrame({"open": f["close"].iloc[-1], "high": f["close"].iloc[-1], "low": f["close"].iloc[-1],
+                               "close": f["close"].iloc[-1], "volume": 1.0},
+                              index=pd.date_range(close - pd.Timedelta(days=30), close, freq="h", inclusive="left"))
+              for p, f in daily.items()}
+
+    class History(Candles):
+        def get_bars(self, symbol, tf, start, end):
+            if tf == "D1":
+                return super().get_bars(symbol, tf, start, end)
+            df = hourly[symbol]
+            return df[(df.index >= pd.Timestamp(start)) & (df.index < pd.Timestamp(end))]
+
+    rates = LivePolicyRates(["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"], cache=official(tmp_path),
+                            get=lambda url: (_ for _ in ()).throw(AssertionError("cached and fresh: not fetched")))
+    clock = ReplayClock(close)
+    rt = build_runtime("paper", specs, Ledger(":memory:", git_commit="t"), history={"forex": History(daily)},
+                       stream=FakeStream(), quotes=QuoteBook(30, clock=clock.now), clock=clock, config=RuntimeConfig(),
+                       venues={"forex": SimBroker(10_000, account_id="sim")}, warmup_bars=24 * 25, policy_rates=rates)
+    names = {c.name: c for c in rt.checks}
+    assert names["columns:fx_carry"].status == "ok" and names["columns:fx_strength"].status == "ok"
+    assert rt.services == [rates] and rt.store.research is rt.columns
+    spec = specs[0]
+    pt = rt.core.signals.at(spec, "EUR_USD", close)
+    assert pt is not None and pt.bars > 2                             # columns attached: the spec evaluated
+    rt.columns.rates = None                                          # official rates gone: blocked, with a fault
+    rt.columns.update(close)
+    rt.core.signals._cache.clear()
+    assert rt.core.signals.at(spec, "EUR_USD", close) is None
+    assert rt.core.signals.at(specs[1], "EUR_USD", close) is not None   # the strength strategy is unaffected
+    faults = [r for r in rt.core.ledger.rows(kind="health") if r["check"] == "columns"]
+    assert len(faults) == 1 and not faults[0]["ok"] and "fx-carry-trend blocked" in faults[0]["detail"]
 
 
 def test_oanda_401_get_is_retried_once_with_the_keychain_token(caplog, monkeypatch):
