@@ -36,6 +36,7 @@ from tradex.core.interfaces import Broker, Clock, WallClock
 from tradex.core.ledger import Ledger
 from tradex.core.loop import INACTIVE, CoreConfig, TradingCore
 from tradex.core.replay import factor_returns
+from tradex.decision.ensemble import measured_hit_rate
 from tradex.costs.models import OandaFxCosts, configure_run_mode, model_for
 from tradex.data.guard import STRICT, RealDataMissing, require_present, require_real_data
 from tradex.data.oanda import _USD_PAIR, QuoteBook, instruments_to_stream
@@ -184,6 +185,13 @@ def split_unfed(specs: list[StrategySpec]) -> tuple[list[StrategySpec], dict[str
     return run, held
 
 
+def split_unmeasured(specs: list[StrategySpec]) -> tuple[list[StrategySpec], list[str]]:
+    """Strategies with a measured hit rate, and the ids of those without. A vote's strength is the win rate it
+    is sized on; paper/live take it only from real-data walk-forward evidence, never from a default."""
+    run = [s for s in specs if measured_hit_rate(s.stats) is not None]
+    return run, [s.id for s in specs if measured_hit_rate(s.stats) is None]
+
+
 def held_text(held: dict[str, list[str]]) -> str:
     return "; ".join(f"{sid} needs {', '.join(cols)}" for sid, cols in sorted(held.items())) + \
         " (no live builder for these research columns yet, so they are not run)"
@@ -218,10 +226,14 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     clock = clock or WallClock()
     feeds = dict(feeds or {})
     active = [s for s in strategies if s.status not in INACTIVE]
-    specs, held = split_unfed(active)
+    fed, held = split_unfed(active)
+    specs, unmeasured = split_unmeasured(fed)
     if not specs:
         raise ValueError("no active strategies" if not active else
-                         "every active strategy reads research columns the live runtime cannot build: " + held_text(held))
+                         "every active strategy is held back: " + "; ".join(
+                             ([held_text(held)] if held else []) +
+                             ([f"no measured hit rate for {', '.join(unmeasured)} (run `tradex research measure`)"]
+                              if unmeasured else [])))
     classes = sorted({s.asset_class for s in specs})
     checks: list[Check] = [Check("mode", "ok", mode), Check("agents", "ok", f"{cfg.agents_mode} (config/runtime.yaml)")]
 
@@ -340,6 +352,9 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     runner = LiveRunner(core, sched, before_close, overrun=pd.Timedelta(seconds=cfg.overrun_s))
     if held:
         checks.append(Check("strategies:held_back", "skip", held_text(held)))
+    if unmeasured:
+        checks.append(Check("strategies:unmeasured", "skip", f"{', '.join(unmeasured)}: no measured hit rate yet "
+                                                              "(`tradex research measure`), so they do not vote"))
     checks.append(Check("strategies", "ok", f"{len(specs)} on {', '.join(tfs)}; base {base_tf}; "
                                             f"{sum(1 for s in specs if s.status in core_cfg.qualified_statuses)} "
                                             "vote in the ensemble"))

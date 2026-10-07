@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from test_spine import _frames, _two_family_specs
+from test_spine import _frames, _measured, _two_family_specs
 from tradex.agents.gateway import Gateway
 from tradex.core.inbox import Mailbox
 from tradex.core.ledger import Ledger
@@ -26,7 +26,7 @@ class Core:
         frames = _frames()
         self.start = frames["AAA"].index[260]
         self.led = ledger or Ledger(":memory:", git_commit="t")
-        self.core = build_replay_core(_two_family_specs(), frames, self.led, self.start,
+        self.core = build_replay_core(_measured(_two_family_specs()) if mode != "replay" else _two_family_specs(), frames, self.led, self.start,
                                       cfg=CoreConfig(agents_mode=agents, mode=mode))
         br = GuardedBroker(self.core.brokers["ensemble"], OrderGuard(ledger_verdicts(self.led), {"sim"}))
         self.core.brokers["ensemble"] = wrap(br) if wrap else br
@@ -290,3 +290,11 @@ def test_agent_gateway_skip_is_not_a_fault(tmp_path):
     r = Gateway(Mailbox(path), http=down, secret=lambda n: "x").call("scout_analyst", "p")
     assert not r.ok
     assert not led.rows(kind="health")
+
+
+def test_a_paper_start_writes_a_snapshot_at_its_first_close_but_replay_does_not():
+    paper, replay = Core(mode="paper"), Core(mode="replay")
+    paper.step()
+    replay.step()
+    assert {r["book"] for r in paper.led.rows(kind="snapshot")} >= {"ensemble"}
+    assert not replay.led.rows(kind="snapshot")

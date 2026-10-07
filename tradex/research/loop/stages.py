@@ -452,6 +452,7 @@ def _walk_forward(ctx: Ctx, row: dict) -> dict:
             "n_trials_this_run": rep.n_trials_this_run, "ledger_count": ledger_n, "oos_trades": int(o.get("trades", 0)),
             "profit_factor": num(o.get("profit_factor")), "sharpe": num(o.get("sharpe")), "dsr": num(o.get("dsr")),
             "max_drawdown": num(o.get("max_drawdown")), "positive_folds": num(o.get("positive_folds")),
+            "win_rate": num(o.get("win_rate")), "win_rate_lower": num(o.get("win_rate_lower")),
             "folds": len(rep.folds), "recommended_params": rep.recommended_params,
             "param_stability": num(rep.param_stability), "data_key": data_key(ctx, spec, frames),
             "seconds": round(_time.time() - t0, 1), "thresholds": {k: getattr(th, k) for k in th.__dataclass_fields__}}

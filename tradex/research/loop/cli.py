@@ -44,6 +44,11 @@ def add_parser(sub) -> None:
     lp.add_argument("--ledger", default=str(ROOT / "data" / "ledger" / "live.sqlite"),
                     help="trading ledger the health stage reads paper results from")
     lp.add_argument("--results-dir", default=str(DEFAULT_RESULTS))
+    ms = rsub.add_parser("measure", help="write each strategy's measured hit rate (from the loop's real-data "
+                                         "walk-forward evidence) into its spec file; paper/live vote on nothing else")
+    ms.add_argument("--db", help="run state file (default data/research/loop.sqlite or $TRADEX_LOOP_DB)")
+    ms.add_argument("--strategies", default=str(ROOT / "strategies"), help="folder with proposed/ and seeds/")
+    ms.add_argument("--extra-specs", nargs="*", default=[str(ROOT / "research" / "specs")])
 
 
 def _sources(a):
@@ -57,6 +62,19 @@ def _sources(a):
 
 
 def run(a) -> int:
+    if a.research_cmd == "measure":
+        from tradex.research.loop.specstore import YamlSpecStore
+        from tradex.research.loop.state import LoopState
+        from tradex.research.measure import measure
+        path = db_path(a.db)
+        if not path.exists():
+            print(f"no research state at {path}: run `tradex research loop` first", file=sys.stderr)
+            return 1
+        root = Path(a.strategies)
+        res = measure(LoopState(path, read_only=True), YamlSpecStore(root / "proposed", root / "seeds", *a.extra_specs))
+        for sid, what in sorted(res.items()):
+            print(f"{sid}: {what}")
+        return 0
     if a.research_cmd != "loop":
         return 2
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", stream=sys.stderr)

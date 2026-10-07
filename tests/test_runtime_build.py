@@ -154,7 +154,7 @@ def _write_fx_strategy(d):
         "id: fx-t\nversion: 1\nfamily: trend\nasset_class: forex\nuniverse: [EUR_USD]\nstatus: proposed\n"
         "timeframes: {signal: H1}\nfeatures: {ema: {fn: talib.EMA, period: 20}}\n"
         "entry: {long: close > ema, short: close < ema}\nexit: {stop_atr: 1.5, target_r: 2.0, max_bars: 10}\n"
-        "holding: {expected_hours: 24, crosses_rollover: true}\n")
+        "holding: {expected_hours: 24, crosses_rollover: true}\nstats: {hit_rate: 0.45}\n")
 
 
 def test_cli_dry_run_prints_readiness_without_a_broker(tmp_path, capsys, monkeypatch):
