@@ -74,14 +74,17 @@ def _oanda(acc, guard, ctx: dict):
                                       http=_logged_http(oanda._http, acc.account_id))
 
 
-def _logged_http(http: Callable, account_id: str) -> Callable:
+def _logged_http(http: Callable, account_id: str, retry_delays: tuple[float, ...] = (2.0, 5.0, 10.0),
+                 sleep: Callable[[float], None] | None = None) -> Callable:
     """Log every non-2xx Oanda REST reply with its path, query and Oanda's own error text.
 
     The adapter (protected) raises VenueAuthError without Oanda's message, which left the
     hourly 401s on /transactions/sinceid (6-7 Oct) undiagnosable. The account ID is masked
     and the token never reaches this function's output."""
     import logging
+    import time
     log = logging.getLogger("tradex.oanda.http")
+    sleep = sleep or time.sleep
 
     def call(method: str, url: str, headers: dict, body: dict | None = None, **kw):
         status, payload = http(method, url, headers, body, **kw)
@@ -93,6 +96,9 @@ def _logged_http(http: Callable, account_id: str) -> Callable:
             # A long-running run gets 401s that fresh processes never see (7 Oct). Compare the
             # token this process sent with the Keychain's (8-hex fingerprints only), then retry
             # the read once with the Keychain token: it either heals the call or names the cause.
+            # 7 Oct: same token as the Keychain (fingerprints matched), same account, and the very
+            # same request returned 200 minutes later. Oanda practice refuses some reads around
+            # an hourly close, so a 401 read is retried with backoff before the adapter faults.
             from tradex import secrets
             try:
                 fresh = secrets.get("oanda_token")
@@ -101,9 +107,13 @@ def _logged_http(http: Callable, account_id: str) -> Callable:
                 return status, payload
             sent = headers.get("Authorization", "").removeprefix("Bearer ")
             retry_headers = {**headers, "Authorization": f"Bearer {fresh}"}
-            status, payload = http(method, url, retry_headers, body, **kw)
-            log.warning("oanda 401 retry: sent token %s, keychain token %s -> %s %s", _fp(sent), _fp(fresh),
-                        status, payload.get("errorMessage", "") if status >= 300 else "ok")
+            for delay in retry_delays:
+                sleep(delay)
+                status, payload = http(method, url, retry_headers, body, **kw)
+                log.warning("oanda 401 retry after %ss: sent token %s, keychain token %s -> %s %s", delay, _fp(sent),
+                            _fp(fresh), status, payload.get("errorMessage", "") if status >= 300 else "ok")
+                if status != 401:
+                    break
         return status, payload
     return call
 
