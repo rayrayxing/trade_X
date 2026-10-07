@@ -64,7 +64,6 @@ def test_a_measured_hit_rate_is_used_as_the_votes_strength():
     assert votes and votes[0].strength == pytest.approx(0.57)
 
 
-@known_gap("G7", "loop._votes falls back to DEFAULT_HIT_RATE (0.40) in paper/live for a strategy with no measured hit rate")
 @pytest.mark.parametrize("stats", [{}, {"sharpe": 1.1}])
 def test_g7_paper_never_votes_with_the_default_hit_rate(stats):
     spec = simple_spec(long="close > 0")

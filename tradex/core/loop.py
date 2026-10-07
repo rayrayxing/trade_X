@@ -61,7 +61,7 @@ from tradex.core.records import (Close, DecisionIds, EquitySnapshot, ExitChange,
                                  Veto, Vote)
 from tradex.costs.models import CostModel, RateMissing, model_for, next_rollover, split_pair
 from tradex.data.guard import RealDataMissing
-from tradex.decision.ensemble import DEFAULT_HIT_RATE, PlanRules, finalise
+from tradex.decision.ensemble import DEFAULT_HIT_RATE, PlanRules, finalise, measured_hit_rate
 from tradex.events import EventCalendar
 from tradex.execution.checks import SanityPolicy, ShortInfo, ShortPolicy, sanity_check, short_check
 from tradex.execution.guard import OrderRefused
@@ -357,12 +357,17 @@ class TradingCore:
                 continue
             if not np.isfinite(sp.atr) or sp.atr <= 0:
                 continue
+            hit = measured_hit_rate(s.stats)
+            if hit is None:
+                if self.cfg.live:                    # paper/live never vote on a stand-in win rate
+                    continue
+                hit = DEFAULT_HIT_RATE
             d = 1 if sp.long_entry else -1
             c = sp.close
             stop_dist = s.exit.stop_atr * sp.atr
             out.append(Vote(time=ct, strategy_id=s.id, strategy_version=s.version, family=s.family, symbol=sym,
                             asset_class=s.asset_class, direction=d,
-                            strength=float(s.stats.get("hit_rate", DEFAULT_HIT_RATE)), entry_ref=c,
+                            strength=float(hit), entry_ref=c,
                             stop=c - d * stop_dist, targets=[c + d * s.exit.target_r * stop_dist],
                             max_bars=s.exit.max_bars, knowable_at=ct, tf=tf))
         return out

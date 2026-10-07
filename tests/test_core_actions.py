@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from test_spine import _frames, _two_family_specs
+from test_spine import _frames, _measured, _two_family_specs
 from tradex.agents.gateway import Gateway
 from tradex.core.inbox import Mailbox
 from tradex.core.ledger import Ledger
@@ -26,7 +26,7 @@ class Core:
         frames = _frames()
         self.start = frames["AAA"].index[260]
         self.led = ledger or Ledger(":memory:", git_commit="t")
-        self.core = build_replay_core(_two_family_specs(), frames, self.led, self.start,
+        self.core = build_replay_core(_measured(_two_family_specs()) if mode != "replay" else _two_family_specs(), frames, self.led, self.start,
                                       cfg=CoreConfig(agents_mode=agents, mode=mode))
         br = GuardedBroker(self.core.brokers["ensemble"], OrderGuard(ledger_verdicts(self.led), {"sim"}))
         self.core.brokers["ensemble"] = wrap(br) if wrap else br

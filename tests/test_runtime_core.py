@@ -60,6 +60,7 @@ def test_live_core_and_replay_core_write_identical_decision_rows():
 
 def _mixed_specs():
     base = {"version": 1, "asset_class": "forex", "universe": ["EUR_USD", "USD_JPY"], "status": "paper",
+            "stats": {"hit_rate": 0.45},        # paper/live vote only on a measured hit rate
             "holding": {"expected_hours": 24, "crosses_rollover": True},
             "exit": {"stop_atr": 1.5, "target_r": 2.5, "max_bars": 20}}
     h1 = StrategySpec.from_dict(base | {"id": "h1-trend", "family": "trend", "timeframes": {"signal": "H1"},

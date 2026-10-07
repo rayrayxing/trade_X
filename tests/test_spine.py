@@ -255,6 +255,13 @@ def test_counterfactual_follows_blocked_plan_to_its_stop():
 
 # --- replay ------------------------------------------------------------------------------------
 
+def _measured(specs, hit_rate=0.45):
+    """Paper/live vote only on a measured hit rate; give test strategies one."""
+    for s in specs:
+        s.stats = {**s.stats, "hit_rate": hit_rate}
+    return specs
+
+
 def _two_family_specs():
     base = {"version": 1, "asset_class": "stocks", "universe": ["AAA", "BBB"], "timeframes": {"signal": "D1"},
             "holding": {"expected_hours": 72}, "status": "paper",

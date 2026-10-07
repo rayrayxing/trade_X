@@ -3,7 +3,7 @@ from collections import Counter
 
 import pandas as pd
 
-from test_spine import _frames, _two_family_specs
+from test_spine import _frames, _measured, _two_family_specs
 from tradex.core.ledger import Ledger
 from tradex.core.loop import CoreConfig
 from tradex.core.records import DecisionIds, Veto
@@ -21,13 +21,13 @@ def test_same_day_restart_on_the_same_ledger_continues_numbering(tmp_path):
     day = end
     path = tmp_path / "live.sqlite"
     first = Ledger(path, git_commit="t")
-    run_replay(_two_family_specs(), frames, first, start, end, cfg=CoreConfig(mode="paper"), use_es=False)
+    run_replay(_measured(_two_family_specs()), frames, first, start, end, cfg=CoreConfig(mode="paper"), use_es=False)
     before = _plans(first)
     first.close()
     assert before and all(d.startswith(day.strftime("%Y-%m-%d")) for d in before)
 
     again = Ledger(path, git_commit="t")                     # a restart: new process, same ledger file
-    run_replay(_two_family_specs(), frames, again, start, end, cfg=CoreConfig(mode="paper"), use_es=False)
+    run_replay(_measured(_two_family_specs()), frames, again, start, end, cfg=CoreConfig(mode="paper"), use_es=False)
     after = _plans(again)
     assert len(after) == 2 * len(before)
     assert not [d for d, n in Counter(after).items() if n > 1]           # no ID used twice

@@ -31,7 +31,17 @@ from tradex.core.records import TradePlan, Vote
 from tradex.costs.models import CostModel
 from tradex.timeframes import duration
 
-DEFAULT_HIT_RATE = 0.40
+DEFAULT_HIT_RATE = 0.40        # research and replay only: paper/live never vote with it (see measured_hit_rate)
+
+
+def measured_hit_rate(stats: dict | None) -> float | None:
+    """The strategy's measured hit rate, or None. Written by ``tradex research measure`` from real-data
+    walk-forward evidence (the Wilson lower bound of the out-of-sample win rate)."""
+    try:
+        h = float((stats or {}).get("hit_rate"))
+    except (TypeError, ValueError):
+        return None
+    return h if 0.0 < h < 1.0 else None
 
 
 @dataclass
