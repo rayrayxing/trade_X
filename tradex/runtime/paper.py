@@ -174,6 +174,7 @@ class PaperDeps:
     stop: Callable[[], bool] | None = None
     quiet_marks: Callable[[pd.Timestamp], bool] | None = None
     guardian_factory: Callable | None = None
+    financing: Callable[[list[str]], dict] | None = None   # Oanda financing rates, to cross-check official rates
 
 
 def default_deps() -> PaperDeps:
@@ -181,8 +182,10 @@ def default_deps() -> PaperDeps:
     from tradex.data.oanda import PriceStream
     from tradex.data.providers import AlpacaProvider, OandaProvider
     from tradex.runtime.marks import OpenDMarks, us_regular_session
+    from tradex.data.oanda import fetch_financing
     return PaperDeps(has_secret=secrets.has, history=lambda: {"forex": OandaProvider(), "stocks": AlpacaProvider()},
-                     stream=PriceStream, marks=OpenDMarks, quiet_marks=lambda t: not us_regular_session(t))
+                     stream=PriceStream, marks=OpenDMarks, quiet_marks=lambda t: not us_regular_session(t),
+                     financing=lambda pairs: fetch_financing(pairs))
 
 
 def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None, *, accounts_path=None,
@@ -229,7 +232,8 @@ def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None
                            venues=pv.venues, accounts=pv.accounts, account_currencies=ccys, clock=clock,
                            config=cfg, has_secret=deps.has_secret,
                            marks={"stocks": marks} if marks is not None else None,
-                           guardian_factory=deps.guardian_factory, quiet_marks=deps.quiet_marks)
+                           guardian_factory=deps.guardian_factory, quiet_marks=deps.quiet_marks,
+                           financing=deps.financing)
     except (SyntheticDataRefused, RealDataMissing, VenuesMissing, ValueError, LookupError, RuntimeError,
             OSError) as exc:
         print(f"not starting: {type(exc).__name__}: {exc}", file=err)

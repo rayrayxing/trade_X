@@ -20,6 +20,7 @@ class BarStore:
         self.clock = clock
         self.frames: dict[str, pd.DataFrame] = {s: df.sort_index() for s, df in (frames or {}).items()}
         self._higher: dict[tuple[str, str], tuple[int, pd.DataFrame]] = {}
+        self.research = None              # live research columns (tradex.runtime.columns.LiveColumns), if any
 
     def symbols(self) -> list[str]:
         return list(self.frames)
