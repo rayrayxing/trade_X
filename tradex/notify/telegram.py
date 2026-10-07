@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS telegram_kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 ALERT_KINDS = ("order", "fill", "close", "veto", "verdict", "health")
 CONFIRM_TTL_S = 60
+FAULT_REPEAT_S = 6 * 3600          # an identical fault is alerted once per this long (every row stays in the ledger)
 QUIET_START, QUIET_END = time(23, 0), time(7, 30)
 try:
     from zoneinfo import ZoneInfo
@@ -108,6 +109,7 @@ class TelegramService:
         self.mb = Mailbox(ledger_path, extra_schema=SCHEMA, extra_writable=("telegram_sent", "telegram_kv"))
         self.pending_flatten: dict[str, float] = {}      # token -> expiry (monotonic-free: epoch seconds)
         self.dropped = 0
+        self._fault_seen: dict[str, list] = {}           # fault text -> [last sent (epoch s), repeats held back]
         if not backfill:
             self._baseline()
 
@@ -132,16 +134,33 @@ class TelegramService:
             if out is None:
                 continue                                  # claimed so it is never re-rendered
             text, fault = out
+            key = text
+            if fault:
+                text = self._dedupe_fault(key)
+                if text is None:
+                    continue                              # same fault already sent recently; the ledger keeps every row
             try:
                 self.t.call("sendMessage", {"chat_id": self.chat_id, "text": text,
                                             "disable_notification": (not fault) and is_quiet(self.now())})
                 sent += 1
+                if fault:
+                    self._fault_seen[key] = [self.now().timestamp(), 0]
             except Exception as exc:  # noqa: BLE001 - release the claim, retry next cycle
                 log.warning("alert %s not sent: %s", r["seq"], exc)
                 with self.mb._lock, self.mb.db:
                     self.mb.db.execute("DELETE FROM telegram_sent WHERE seq=?", (r["seq"],))
                 break
         return sent
+
+    def _dedupe_fault(self, text: str) -> str | None:
+        """The same fault text is sent once per FAULT_REPEAT_S; the next one after that says how many it covers."""
+        now = self.now().timestamp()
+        seen = self._fault_seen.get(text)
+        if seen is not None and now - seen[0] < FAULT_REPEAT_S:
+            seen[1] += 1
+            return None
+        held = seen[1] if seen else 0
+        return text + (f"  (repeated {held} more time{'s' if held != 1 else ''} since the last alert)" if held else "")
 
     # --- commands ----------------------------------------------------------------------
 

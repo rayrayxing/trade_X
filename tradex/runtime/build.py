@@ -161,6 +161,34 @@ class Runtime:
         return "\n".join(lines + [f"{verdict} ({self.mode}{', dry run: no broker connected, nothing fetched' if self.dry else ''})"])
 
 
+LIVE_COLUMNS: frozenset[str] = frozenset()      # research columns the live bar store can supply (none yet)
+
+
+def research_columns(spec: StrategySpec) -> set[str]:
+    return {f["name"] for f in spec.features.values() if f.get("fn") == "data.column" and f.get("name")}
+
+
+def split_unfed(specs: list[StrategySpec]) -> tuple[list[StrategySpec], dict[str, list[str]]]:
+    """Strategies the live runtime can run, and those held back with the columns missing for each.
+
+    A spec that reads a ``data.column`` (research panels such as carry or cross-sectional ranks) needs
+    those columns built from real data; live bars only carry OHLCV. Running it anyway raised a fault on
+    every bar close, so it is held back, once and visibly, until a live builder supplies its columns."""
+    run, held = [], {}
+    for s in specs:
+        missing = sorted(research_columns(s) - LIVE_COLUMNS)
+        if missing:
+            held[s.id] = missing
+        else:
+            run.append(s)
+    return run, held
+
+
+def held_text(held: dict[str, list[str]]) -> str:
+    return "; ".join(f"{sid} needs {', '.join(cols)}" for sid, cols in sorted(held.items())) + \
+        " (no live builder for these research columns yet, so they are not run)"
+
+
 def _label(x: Any) -> str:
     return type(x).__name__
 
@@ -189,9 +217,11 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     cfg = config or RuntimeConfig.load()
     clock = clock or WallClock()
     feeds = dict(feeds or {})
-    specs = [s for s in strategies if s.status not in INACTIVE]
+    active = [s for s in strategies if s.status not in INACTIVE]
+    specs, held = split_unfed(active)
     if not specs:
-        raise ValueError("no active strategies")
+        raise ValueError("no active strategies" if not active else
+                         "every active strategy reads research columns the live runtime cannot build: " + held_text(held))
     classes = sorted({s.asset_class for s in specs})
     checks: list[Check] = [Check("mode", "ok", mode), Check("agents", "ok", f"{cfg.agents_mode} (config/runtime.yaml)")]
 
@@ -307,6 +337,8 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     sched = BarCloseScheduler(sorted(set(tfs) | {base_tf}, key=duration), ledger,
                               grace=pd.Timedelta(seconds=cfg.grace_s), done_until=clock.now())
     runner = LiveRunner(core, sched, before_close, overrun=pd.Timedelta(seconds=cfg.overrun_s))
+    if held:
+        checks.append(Check("strategies:held_back", "skip", held_text(held)))
     checks.append(Check("strategies", "ok", f"{len(specs)} on {', '.join(tfs)}; base {base_tf}; "
                                             f"{sum(1 for s in specs if s.status in core_cfg.qualified_statuses)} "
                                             "vote in the ensemble"))

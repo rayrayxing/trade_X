@@ -183,3 +183,29 @@ def test_cli_real_run_refuses_without_venue_adapters(tmp_path, capsys, monkeypat
     _write_fx_strategy(tmp_path / "s")
     assert main(["run", "--mode", "paper", "--strategies", "s"]) == 1
     assert "tradex/execution/oanda.py is not there" in capsys.readouterr().err
+
+
+def test_a_strategy_that_reads_unbuilt_research_columns_is_held_back_once_not_faulted_every_bar():
+    from tradex.runtime.build import held_text, split_unfed
+    from tradex.strategy.spec import StrategySpec
+    carry = StrategySpec.from_dict({
+        "id": "fx-carry", "version": 1, "asset_class": "forex", "universe": ["EUR_USD"], "status": "paper",
+        "family": "carry", "timeframes": {"signal": "D1"},
+        "features": {"cry": {"fn": "data.column", "name": "carry"}, "xs": {"fn": "data.column", "name": "carry_xs"}},
+        "entry": {"long": "xs >= 0.7 and cry > 0", "short": "xs <= 0.3 and cry < 0"},
+        "holding": {"expected_hours": 960, "crosses_rollover": True},
+        "exit": {"stop_atr": 3.0, "target_r": 4.0, "max_bars": 40}})
+    run, held = split_unfed(_mixed_specs() + [carry])
+    assert [s.id for s in run] == ["h1-trend", "h4-mom"]
+    assert held == {"fx-carry": ["carry", "carry_xs"]}
+    assert "fx-carry needs carry, carry_xs" in held_text(held)
+
+    rt, _, _ = _build(dry=True)                                      # plain specs: nothing held back
+    assert not any(c.name == "strategies:held_back" for c in rt.checks)
+    clock = ReplayClock(START)
+    rt = build_runtime("paper", _mixed_specs() + [carry], Ledger(":memory:", git_commit="t"),
+                       history={"forex": RecordedHistory()}, stream=FakeStream(), quotes=QuoteBook(30, clock=clock.now),
+                       clock=clock, config=RuntimeConfig(), warmup_bars=400, dry=True)
+    note = next(c for c in rt.checks if c.name == "strategies:held_back")
+    assert note.status == "skip" and "fx-carry" in note.detail
+    assert all(s.id != "fx-carry" for s in rt.core.strategies)

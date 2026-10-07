@@ -153,3 +153,28 @@ def test_service_cannot_append_chain(tmp_path):
     import sqlite3
     with pytest.raises(sqlite3.DatabaseError):
         svc.mb.db.execute("DELETE FROM events")
+
+
+def test_an_identical_fault_is_alerted_once_per_window_then_summarised(tmp_path):
+    led, f, clock, svc = mk(tmp_path)
+    for _ in range(4):                                            # the same broker fault, four times in one bar close
+        led.append(Health(T, "broker", False, "ensemble fills: VenueAuthError: oanda GET: HTTP 401"))
+    led.append(Health(T, "core", False, "a different fault"))
+    assert svc.send_alerts() == 2
+    assert [t.split(":")[0] for t in f.texts()] == ["FAULT broker", "FAULT core"]
+    clock.t = clock.t + timedelta(hours=1)
+    led.append(Health(T, "broker", False, "ensemble fills: VenueAuthError: oanda GET: HTTP 401"))
+    assert svc.send_alerts() == 0                                 # still inside the window: silent, row stays in the ledger
+    clock.t = clock.t + timedelta(hours=6)
+    led.append(Health(T, "broker", False, "ensemble fills: VenueAuthError: oanda GET: HTTP 401"))
+    assert svc.send_alerts() == 1
+    assert f.texts()[-1].endswith("(repeated 4 more times since the last alert)")      # 3 from the first burst + 1 an hour later
+
+
+def test_a_failed_send_does_not_start_the_quiet_window(tmp_path):
+    led, f, clock, svc = mk(tmp_path)
+    led.append(Health(T, "broker", False, "down"))
+    f.fail = True
+    assert svc.send_alerts() == 0
+    f.fail = False
+    assert svc.send_alerts() == 1
