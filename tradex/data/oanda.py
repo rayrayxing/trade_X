@@ -110,6 +110,23 @@ def measured_spread_pips(ba: pd.DataFrame, instrument: str) -> float:
     return float(((ba["ask_close"] - ba["bid_close"]) / pip_size(instrument)).median())
 
 
+def fetch_financing(instruments: Iterable[str], *, account_id: str | None = None, token: str | None = None,
+                    http: Callable[[str, dict], dict] = _http_get) -> dict[str, tuple[float, float]]:
+    """Oanda's current annual financing rates per instrument, ``(longRate, shortRate)`` as decimals, from the
+    read-only GET /v3/accounts/{id}/instruments (its ``financing`` field). Used only to cross-check the
+    official policy-rate differentials the live carry columns are built from."""
+    acct = account_id or secrets.get("oanda_account_id")
+    q = urllib.parse.urlencode({"instruments": ",".join(sorted(instruments))})
+    body = http(f"https://{REST_HOST}/v3/accounts/{acct}/instruments?{q}",
+                {"Authorization": f"Bearer {token or secrets.get('oanda_token')}"})
+    out = {}
+    for ins in body.get("instruments", []):
+        f = ins.get("financing") or {}
+        if "longRate" in f and "shortRate" in f:
+            out[ins["name"]] = (float(f["longRate"]), float(f["shortRate"]))
+    return out
+
+
 # --- price stream ------------------------------------------------------------------------
 
 @dataclass(frozen=True)
