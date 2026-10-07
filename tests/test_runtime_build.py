@@ -222,11 +222,11 @@ def test_oanda_http_errors_are_logged_without_the_account_id(caplog):
     wrapped = _logged_http(http, "101-000-SECRET")
     with caplog.at_level("WARNING"):
         st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/101-000-SECRET/transactions/sinceid?id=3",
-                        {"Authorization": "Bearer tok"})
+                        {"Authorization": "Bearer zq9-tok-zq9"})
     assert st == 401 and "101-000-SECRET" in calls["url"]
     text = caplog.text
     assert "Insufficient authorization" in text and "sinceid?id=3" in text
-    assert "101-000-SECRET" not in text and "tok" not in text
+    assert "101-000-SECRET" not in text and "zq9-tok-zq9" not in text
 
 
 def _fx_dir_specs():
@@ -293,3 +293,22 @@ def test_a_real_build_warms_the_columns_and_signals_read_them(tmp_path):
     assert rt.core.signals.at(specs[1], "EUR_USD", close) is not None   # the strength strategy is unaffected
     faults = [r for r in rt.core.ledger.rows(kind="health") if r["check"] == "columns"]
     assert len(faults) == 1 and not faults[0]["ok"] and "fx-carry-trend blocked" in faults[0]["detail"]
+
+
+def test_oanda_401_get_is_retried_once_with_the_keychain_token(caplog, monkeypatch):
+    import tradex.secrets
+    from tradex.runtime.paper import _logged_http
+    monkeypatch.setattr(tradex.secrets, "get", lambda name: "fresh-token")
+    sent = []
+
+    def http(method, url, headers, body=None, **kw):
+        sent.append(headers["Authorization"])
+        return (200, {}) if headers["Authorization"] == "Bearer fresh-token" else (401, {"errorMessage": "nope"})
+
+    wrapped = _logged_http(http, "ACC")
+    with caplog.at_level("WARNING"):
+        st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/ACC/openTrades", {"Authorization": "Bearer old"})
+    assert st == 200 and sent == ["Bearer old", "Bearer fresh-token"]
+    assert "fresh-token" not in caplog.text and "Bearer old" not in caplog.text and "401 retry" in caplog.text
+    st, _ = wrapped("POST", "https://api-fxpractice.oanda.com/v3/accounts/ACC/orders", {"Authorization": "Bearer old"})
+    assert st == 401 and len(sent) == 3                     # orders are never retried here
