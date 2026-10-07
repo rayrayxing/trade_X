@@ -70,7 +70,27 @@ def _oanda(acc, guard, ctx: dict):
         from tradex.execution import oanda
     except ImportError:
         raise VenuesMissing("tradex/execution/oanda.py is not there: commit the venue adapter patch") from None
-    return oanda.OandaPracticeAdapter(acc.account_id, guard, account=acc, to_usd=ctx["to_usd"])
+    return oanda.OandaPracticeAdapter(acc.account_id, guard, account=acc, to_usd=ctx["to_usd"],
+                                      http=_logged_http(oanda._http, acc.account_id))
+
+
+def _logged_http(http: Callable, account_id: str) -> Callable:
+    """Log every non-2xx Oanda REST reply with its path, query and Oanda's own error text.
+
+    The adapter (protected) raises VenueAuthError without Oanda's message, which left the
+    hourly 401s on /transactions/sinceid (6-7 Oct) undiagnosable. The account ID is masked
+    and the token never reaches this function's output."""
+    import logging
+    log = logging.getLogger("tradex.oanda.http")
+
+    def call(method: str, url: str, headers: dict, body: dict | None = None, **kw):
+        status, payload = http(method, url, headers, body, **kw)
+        if status >= 300:
+            where = url.split("/v3/", 1)[-1].replace(account_id, "<account>")
+            log.warning("oanda %s /%s -> %s %s %s", method, where, status,
+                        payload.get("errorCode", ""), payload.get("errorMessage", ""))
+        return status, payload
+    return call
 
 
 def _moomoo(acc, guard, ctx: dict):

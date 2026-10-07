@@ -209,3 +209,21 @@ def test_a_strategy_that_reads_unbuilt_research_columns_is_held_back_once_not_fa
     note = next(c for c in rt.checks if c.name == "strategies:held_back")
     assert note.status == "skip" and "fx-carry" in note.detail
     assert all(s.id != "fx-carry" for s in rt.core.strategies)
+
+
+def test_oanda_http_errors_are_logged_without_the_account_id(caplog):
+    from tradex.runtime.paper import _logged_http
+    calls = {}
+
+    def http(method, url, headers, body=None, **kw):
+        calls["url"] = url
+        return 401, {"errorMessage": "Insufficient authorization to perform request."}
+
+    wrapped = _logged_http(http, "101-000-SECRET")
+    with caplog.at_level("WARNING"):
+        st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/101-000-SECRET/transactions/sinceid?id=3",
+                        {"Authorization": "Bearer tok"})
+    assert st == 401 and "101-000-SECRET" in calls["url"]
+    text = caplog.text
+    assert "Insufficient authorization" in text and "sinceid?id=3" in text
+    assert "101-000-SECRET" not in text and "tok" not in text
