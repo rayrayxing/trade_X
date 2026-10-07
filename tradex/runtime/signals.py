@@ -145,6 +145,12 @@ class SignalCache:
         if n is not None:
             bars = bars.iloc[-n:]
         pt = None
+        research = getattr(self.data, "research", None)       # live research columns; None blocks the strategy
+        if research is not None and research.serves(spec) and len(bars):
+            bars = research.attach(spec, symbol, bars, close_t)
+            if bars is None:
+                self._cache[key] = (close_t, None)
+                return None
         if len(bars) and bars.index[-1] + duration(spec.signal_tf) == close_t:
             sig = compute_signals(spec, bars)
             pt = SignalPoint(bool(sig.long_entry.iloc[-1]), bool(sig.short_entry.iloc[-1]),

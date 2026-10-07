@@ -22,6 +22,7 @@ class BarStore:
         self.live = False                      # paper/live: appended bars must not carry a synthetic/CSV/cached origin
         self.frames: dict[str, pd.DataFrame] = {s: df.sort_index() for s, df in (frames or {}).items()}
         self._higher: dict[tuple[str, str], tuple[int, pd.DataFrame]] = {}
+        self.research = None              # live research columns (tradex.runtime.columns.LiveColumns), if any
 
     def symbols(self) -> list[str]:
         return list(self.frames)

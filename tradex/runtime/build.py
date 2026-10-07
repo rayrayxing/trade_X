@@ -15,6 +15,10 @@ What it guarantees before anything runs:
 - every venue account currency that is not USD (the Oanda practice account is in SGD) has
   its USD pair (USD_SGD) on the Oanda price stream, so account equity, margin, fills and
   financing convert at a live quote; a missing quote raises MissingRate (block + fault);
+- strategies that read research columns (carry, cross-sectional ranks) get them from
+  ``LiveColumns`` (tradex.runtime.columns: Oanda daily candles plus official policy rates,
+  the same research functions); a missing pair or a missing/stale rate blocks that
+  strategy with a fault; one no live builder can feed is held back, visibly;
 - a venue without resting stops (moomoo SIMULATE: ``check_stops``) gets a StopGuardian
   that checks live marks at least once a minute; ``Runtime.start`` runs it in a thread and
   each close checks it is still alive.
@@ -42,6 +46,7 @@ from tradex.data.oanda import _USD_PAIR, QuoteBook, instruments_to_stream
 from tradex.events import EventCalendar
 from tradex.risk.exposure import ESModel
 from tradex.risk.gate import RiskGate
+from tradex.runtime.columns import LIVE_COLUMNS, LiveColumns, builder_for, research_columns  # noqa: F401 - LIVE_COLUMNS re-exported
 from tradex.runtime.config import RuntimeConfig
 from tradex.runtime.feed import StreamFeed
 from tradex.runtime.fx import LiveQuoteRates
@@ -128,6 +133,8 @@ class Runtime:
     guardians: list[Any] = field(default_factory=list)
     stop_event: threading.Event = field(default_factory=threading.Event)
     threads: list[threading.Thread] = field(default_factory=list)
+    columns: LiveColumns | None = None
+    services: list[Any] = field(default_factory=list)   # background refreshers: ``run(stop_event)``
 
     def start(self) -> None:
         """Start the background threads: the Oanda stream reader and each stop guardian."""
@@ -137,6 +144,11 @@ class Runtime:
             self.threads.append(self.feed.start())
         for g in self.guardians:
             t = threading.Thread(target=g.run, args=(self.stop_event,), name=f"stop-guardian-{g.asset_class}",
+                                 daemon=True)
+            t.start()
+            self.threads.append(t)
+        for svc in self.services:
+            t = threading.Thread(target=svc.run, args=(self.stop_event,), name=f"refresh-{type(svc).__name__}",
                                  daemon=True)
             t.start()
             self.threads.append(t)
@@ -161,22 +173,17 @@ class Runtime:
         return "\n".join(lines + [f"{verdict} ({self.mode}{', dry run: no broker connected, nothing fetched' if self.dry else ''})"])
 
 
-LIVE_COLUMNS: frozenset[str] = frozenset()      # research columns the live bar store can supply (none yet)
-
-
-def research_columns(spec: StrategySpec) -> set[str]:
-    return {f["name"] for f in spec.features.values() if f.get("fn") == "data.column" and f.get("name")}
-
-
 def split_unfed(specs: list[StrategySpec]) -> tuple[list[StrategySpec], dict[str, list[str]]]:
     """Strategies the live runtime can run, and those held back with the columns missing for each.
 
     A spec that reads a ``data.column`` (research panels such as carry or cross-sectional ranks) needs
-    those columns built from real data; live bars only carry OHLCV. Running it anyway raised a fault on
-    every bar close, so it is held back, once and visibly, until a live builder supplies its columns."""
+    those columns built from real data; live bars only carry OHLCV. ``LiveColumns`` builds them for a
+    forex daily spec whose columns one research builder covers; any other is held back, once and
+    visibly (running it would fault on every bar close)."""
     run, held = [], {}
     for s in specs:
-        missing = sorted(research_columns(s) - LIVE_COLUMNS)
+        need = research_columns(s)
+        missing = sorted(need) if need and builder_for(s) is None else []
         if missing:
             held[s.id] = missing
         else:
@@ -186,7 +193,7 @@ def split_unfed(specs: list[StrategySpec]) -> tuple[list[StrategySpec], dict[str
 
 def held_text(held: dict[str, list[str]]) -> str:
     return "; ".join(f"{sid} needs {', '.join(cols)}" for sid, cols in sorted(held.items())) + \
-        " (no live builder for these research columns yet, so they are not run)"
+        " (no live builder supplies these research columns for it, so it is not run)"
 
 
 def _label(x: Any) -> str:
@@ -204,14 +211,17 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
                   marks: dict[str, Callable[[list[str]], dict[str, float]]] | None = None,
                   guardian_factory: Callable[..., Any] | None = None,
                   quiet_marks: Callable[[pd.Timestamp], bool] | None = None,
-                  profit=None) -> Runtime:
+                  profit=None, policy_rates=None,
+                  financing: Callable[[list[str]], dict[str, tuple[float, float]]] | None = None) -> Runtime:
     """``history[asset_class]`` is the bar provider for start-up history; ``stream`` is the
     Oanda price stream; ``feeds[asset_class]`` is any other live bar feed (an object with
     ``before_close(tf, ts)``, and ``bind(store, health)`` if it needs them).
     ``venues[asset_class]`` are the venue adapters (behind the order guard), ``accounts``
     their agent account names. ``account_currencies`` defaults to what the venues report;
     each non-USD one must have its USD pair on the stream. ``marks[asset_class]`` is the
-    live mark source for a venue's stop guardian (a venue with ``check_stops``)."""
+    live mark source for a venue's stop guardian (a venue with ``check_stops``). ``policy_rates`` is the
+    official-rate source of the carry columns (default: ``LivePolicyRates``, fetched from the central
+    banks); ``financing(pairs)`` returns Oanda's (long, short) financing rates to cross-check it."""
     if mode not in STRICT:
         raise ValueError(f"build_runtime is for paper/live, not {mode!r}; replay uses tradex.core.replay")
     cfg = config or RuntimeConfig.load()
@@ -299,6 +309,30 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
         es = ESModel(rets) if len(rets) >= 20 else None
         checks.append(Check("history", "ok", f"{warmup_bars} {base_tf} bars for {len(symbols)} symbols"))
 
+    fed = [s for s in specs if builder_for(s)]
+    columns = LiveColumns(fed, history.get("forex")) if fed else None
+    services: list[Any] = []
+    if columns is not None:
+        if columns.currencies:
+            if policy_rates is None:
+                from tradex.runtime.policy_rates import LivePolicyRates
+                policy_rates = LivePolicyRates(columns.currencies, columns.rate_pairs, clock=clock.now,
+                                               financing=financing)
+            columns.rates = policy_rates
+        if dry:
+            checks.append(Check("columns", "ok", columns.describe() + "; nothing fetched (dry run)"))
+        else:
+            now = clock.now()
+            if policy_rates is not None and columns.currencies:
+                policy_rates.load_cached()
+                if policy_rates.due(now):
+                    policy_rates.refresh(now)
+                services.append(policy_rates)
+            columns.warm(now)
+            columns.update(now)
+            checks.append(Check("columns", "ok", columns.describe()))
+            checks += [Check(*c) for c in columns.checks()]
+
     gate = RiskGate.from_policy(policy_path, es)
     core_cfg = CoreConfig(mode=mode, agents_mode=cfg.agents_mode, simulation=False)
     core = TradingCore(specs, store, clock, ledger, gate, brokers={"ensemble": book}, rates=rates,
@@ -310,7 +344,9 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
     for ac in classes:
         if ac in feeds and hasattr(feeds[ac], "bind"):
             feeds[ac].bind(store, core.health)
-    hooks = ([feed] if feed else []) + [feeds[ac] for ac in classes if ac in feeds]
+    if columns is not None:
+        columns.bind(store, core.health)
+    hooks = ([feed] if feed else []) + [feeds[ac] for ac in classes if ac in feeds] + ([columns] if columns else [])
 
     # stop guardians for venues whose stops the core manages (moomoo SIMULATE)
     guardians, silent = [], set()
@@ -350,4 +386,5 @@ def build_runtime(mode: str, strategies: list[StrategySpec], ledger: Ledger, *,
             miss = [n for n in names if not has_secret(n)]
             checks.append(Check(f"secrets:{group}", "FAIL" if miss else "ok",
                                 f"missing {', '.join(miss)} (run trade-x setup)" if miss else "set"))
-    return Runtime(mode, dry, core, runner, store, quotes, book, feed, hooks, checks, guardians)
+    return Runtime(mode, dry, core, runner, store, quotes, book, feed, hooks, checks, guardians,
+                   columns=columns, services=services)

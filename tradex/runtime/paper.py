@@ -70,7 +70,47 @@ def _oanda(acc, guard, ctx: dict):
         from tradex.execution import oanda
     except ImportError:
         raise VenuesMissing("tradex/execution/oanda.py is not there: commit the venue adapter patch") from None
-    return oanda.OandaPracticeAdapter(acc.account_id, guard, account=acc, to_usd=ctx["to_usd"])
+    return oanda.OandaPracticeAdapter(acc.account_id, guard, account=acc, to_usd=ctx["to_usd"],
+                                      http=_logged_http(oanda._http, acc.account_id))
+
+
+def _logged_http(http: Callable, account_id: str) -> Callable:
+    """Log every non-2xx Oanda REST reply with its path, query and Oanda's own error text.
+
+    The adapter (protected) raises VenueAuthError without Oanda's message, which left the
+    hourly 401s on /transactions/sinceid (6-7 Oct) undiagnosable. The account ID is masked
+    and the token never reaches this function's output."""
+    import logging
+    log = logging.getLogger("tradex.oanda.http")
+
+    def call(method: str, url: str, headers: dict, body: dict | None = None, **kw):
+        status, payload = http(method, url, headers, body, **kw)
+        if status >= 300:
+            where = url.split("/v3/", 1)[-1].replace(account_id, "<account>")
+            log.warning("oanda %s /%s -> %s %s %s", method, where, status,
+                        payload.get("errorCode", ""), payload.get("errorMessage", ""))
+        if status == 401 and method == "GET":
+            # A long-running run gets 401s that fresh processes never see (7 Oct). Compare the
+            # token this process sent with the Keychain's (8-hex fingerprints only), then retry
+            # the read once with the Keychain token: it either heals the call or names the cause.
+            from tradex import secrets
+            try:
+                fresh = secrets.get("oanda_token")
+            except secrets.MissingSecret:
+                log.warning("oanda 401: no Keychain token to retry with")
+                return status, payload
+            sent = headers.get("Authorization", "").removeprefix("Bearer ")
+            retry_headers = {**headers, "Authorization": f"Bearer {fresh}"}
+            status, payload = http(method, url, retry_headers, body, **kw)
+            log.warning("oanda 401 retry: sent token %s, keychain token %s -> %s %s", _fp(sent), _fp(fresh),
+                        status, payload.get("errorMessage", "") if status >= 300 else "ok")
+        return status, payload
+    return call
+
+
+def _fp(token: str) -> str:
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()[:8] if token else "none"
 
 
 def _moomoo(acc, guard, ctx: dict):
@@ -154,6 +194,7 @@ class PaperDeps:
     stop: Callable[[], bool] | None = None
     quiet_marks: Callable[[pd.Timestamp], bool] | None = None
     guardian_factory: Callable | None = None
+    financing: Callable[[list[str]], dict] | None = None   # Oanda financing rates, to cross-check official rates
 
 
 def default_deps() -> PaperDeps:
@@ -161,8 +202,10 @@ def default_deps() -> PaperDeps:
     from tradex.data.oanda import PriceStream
     from tradex.data.providers import AlpacaProvider, OandaProvider
     from tradex.runtime.marks import OpenDMarks, us_regular_session
+    from tradex.data.oanda import fetch_financing
     return PaperDeps(has_secret=secrets.has, history=lambda: {"forex": OandaProvider(), "stocks": AlpacaProvider()},
-                     stream=PriceStream, marks=OpenDMarks, quiet_marks=lambda t: not us_regular_session(t))
+                     stream=PriceStream, marks=OpenDMarks, quiet_marks=lambda t: not us_regular_session(t),
+                     financing=lambda pairs: fetch_financing(pairs))
 
 
 def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None, *, accounts_path=None,
@@ -209,7 +252,8 @@ def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None
                            venues=pv.venues, accounts=pv.accounts, account_currencies=ccys, clock=clock,
                            config=cfg, has_secret=deps.has_secret,
                            marks={"stocks": marks} if marks is not None else None,
-                           guardian_factory=deps.guardian_factory, quiet_marks=deps.quiet_marks)
+                           guardian_factory=deps.guardian_factory, quiet_marks=deps.quiet_marks,
+                           financing=deps.financing)
     except (SyntheticDataRefused, RealDataMissing, VenuesMissing, ValueError, LookupError, RuntimeError,
             OSError) as exc:
         print(f"not starting: {type(exc).__name__}: {exc}", file=err)
