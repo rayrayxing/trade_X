@@ -290,3 +290,11 @@ def test_agent_gateway_skip_is_not_a_fault(tmp_path):
     r = Gateway(Mailbox(path), http=down, secret=lambda n: "x").call("scout_analyst", "p")
     assert not r.ok
     assert not led.rows(kind="health")
+
+
+def test_a_paper_start_writes_a_snapshot_at_its_first_close_but_replay_does_not():
+    paper, replay = Core(mode="paper"), Core(mode="replay")
+    paper.step()
+    replay.step()
+    assert {r["book"] for r in paper.led.rows(kind="snapshot")} >= {"ensemble"}
+    assert not replay.led.rows(kind="snapshot")
