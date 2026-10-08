@@ -358,3 +358,18 @@ def test_venue_reads_are_cached_within_a_close_and_cleared_by_orders():
     now[0] = 11.0
     book.fills()
     assert calls == {"positions": 2, "fills": 2}
+
+
+def test_a_holding_of_rays_without_a_live_price_does_not_block_the_snapshot():
+    """8 Oct: an option Ray holds in the SIMULATE account had no mark, and the whole ensemble
+    snapshot failed with 'no mark for NET261023C350000'."""
+    from tradex.core.interfaces import BrokerPosition
+    clock = ReplayClock(START)
+    venue = SimBroker(10_000, account_id="sim")
+    venue.add_external_position(BrokerPosition("moomoo-NET261023C350000", "NET261023C350000", "stocks", 1, 1.0,
+                                               12.5, START, None, None))
+    rt, _, _ = _build(clock=clock, venues={"forex": venue})
+    rt.core._snapshot_all(START)
+    snaps = [r for r in rt.core.ledger.rows(kind="snapshot") if r["book"] == "ensemble"]
+    assert snaps and [p["mark"] for p in snaps[-1]["positions"] if p["account"] == "ray"] == [None]
+    assert not [h for h in rt.core.ledger.rows(kind="health") if h["check"] == "snapshot"]
