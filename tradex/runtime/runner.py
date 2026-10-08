@@ -26,12 +26,17 @@ class LiveRunner:
         self.core, self.scheduler = core, scheduler
         self.before_close = before_close
         self.overrun, self.timer = overrun, timer
+        self.busy: tuple[str, pd.Timestamp, float] | None = None   # (tf, close, start) while a close runs
 
     def _handle(self, tf: str, ts: pd.Timestamp) -> None:
         t0 = self.timer()
-        if self.before_close is not None:
-            self.before_close(tf, ts)
-        self.core.on_bar_close(tf, ts)
+        self.busy = (tf, ts, t0)
+        try:
+            if self.before_close is not None:
+                self.before_close(tf, ts)
+            self.core.on_bar_close(tf, ts)
+        finally:
+            self.busy = None
         took = self.timer() - t0
         if self.overrun is not None and took > self.overrun.total_seconds():
             self.core.health("scheduler", False, f"{tf} close {ts.isoformat()} took {took:.1f}s "

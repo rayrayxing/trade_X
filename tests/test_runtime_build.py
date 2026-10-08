@@ -123,6 +123,8 @@ def test_stream_ticks_become_bars_the_core_runs_on():
     assert rt.store.frames["EUR_USD"].index[-1] == START and bar["open"] == pytest.approx(1.1)
     assert bar["close"] == pytest.approx(1.1055)
     assert not [h for h in rt.core.ledger.rows(kind="health") if not h["ok"]]
+    # a (re)started paper core shows its accounts at its first close, not at the next NY midnight
+    assert "ensemble" in {r["book"] for r in rt.core.ledger.rows(kind="snapshot")}
 
 
 def test_silent_stream_while_forex_trades_is_one_fault_then_recovery():

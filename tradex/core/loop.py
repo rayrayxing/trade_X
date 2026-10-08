@@ -681,6 +681,8 @@ class TradingCore:
         day = close_t.tz_convert(NY).date()
         if self._last_snap_day is None:
             self._last_snap_day = day
+            if self.cfg.live:                     # a paper/live (re)start shows the account now, not at next midnight
+                self._snapshot_all(close_t)
         elif day != self._last_snap_day:
             self._snapshot_all(close_t)
             self._last_snap_day = day

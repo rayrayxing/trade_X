@@ -135,6 +135,8 @@ class Runtime:
     threads: list[threading.Thread] = field(default_factory=list)
     columns: LiveColumns | None = None
     services: list[Any] = field(default_factory=list)   # background refreshers: ``run(stop_event)``
+    watchdog_s: float = 600.0                          # a close running longer than this is a hang
+    on_stuck: Callable[[str], None] | None = None      # paper sets this to dump stacks and exit
 
     def start(self) -> None:
         """Start the background threads: the Oanda stream reader and each stop guardian."""
@@ -152,6 +154,27 @@ class Runtime:
                                  daemon=True)
             t.start()
             self.threads.append(t)
+        if self.watchdog_s and self.on_stuck is not None:
+            t = threading.Thread(target=self.watch, args=(self.stop_event,), name="close-watchdog", daemon=True)
+            t.start()
+            self.threads.append(t)
+
+    def stuck(self) -> str | None:
+        """Why the current close counts as stuck, or None. A close that runs past ``watchdog_s``
+        (7 Oct: 13 hours inside one close) never finishes on its own."""
+        busy = self.runner.busy
+        if busy is None or not self.watchdog_s:
+            return None
+        tf, ts, t0 = busy
+        took = self.runner.timer() - t0
+        return f"{tf} close {ts.isoformat()} still running after {took:.0f}s" if took > self.watchdog_s else None
+
+    def watch(self, stop: threading.Event, every_s: float = 30.0) -> None:
+        while not stop.wait(every_s):
+            why = self.stuck()
+            if why is not None:
+                self.on_stuck(why)
+                return
 
     def run(self, sleep: Callable[[float], None], stop: Callable[[], bool] | None = None) -> None:
         """The live loop until ``stop()`` (or ``stop_event``); stops the guardians on the way out."""
