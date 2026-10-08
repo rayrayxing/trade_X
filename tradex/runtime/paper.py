@@ -34,20 +34,68 @@ DEFAULT_LEDGER = "data/ledger/live.sqlite"
 
 class Serialized:
     """One lock around every method call of a venue that two threads use: the core's loop
-    and the stop guardian's (the moomoo adapter keeps its order and stop state in memory)."""
+    and the stop guardian's (the moomoo adapter keeps its order and stop state in memory).
 
-    def __init__(self, inner, lock: threading.RLock | None = None):
+    Every call is bounded by ``timeout_s``. On 7 Oct the core hung for 13 hours inside a
+    close after OpenD's connection went away: the moomoo SDK waits for a reply with no
+    deadline. A call (or the wait for the lock) that runs past the deadline goes to
+    ``on_hang``, which in the paper runtime dumps every thread's stack and exits so launchd
+    restarts the process with a fresh OpenD connection."""
+
+    def __init__(self, inner, lock: threading.RLock | None = None, timeout_s: float = 30.0,
+                 on_hang: Callable[[str], None] | None = None):
         self.inner, self.lock = inner, lock or threading.RLock()
+        self.timeout_s, self.on_hang = timeout_s, on_hang
+
+    def _hung(self, what: str) -> None:
+        if self.on_hang is not None:
+            self.on_hang(what)
+        raise TimeoutError(what)
 
     def __getattr__(self, name: str):
         attr = getattr(self.inner, name)
         if not callable(attr):
             return attr
+        label = f"{type(self.inner).__name__}.{name}"
 
         def call(*a, **kw):
-            with self.lock:
-                return attr(*a, **kw)
+            if not self.lock.acquire(timeout=self.timeout_s):
+                self._hung(f"{label}: waited {self.timeout_s:.0f}s for the venue lock")
+            try:
+                box: dict = {}
+
+                def work():
+                    try:
+                        box["value"] = attr(*a, **kw)
+                    except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
+                        box["error"] = exc
+                t = threading.Thread(target=work, name=f"venue-call-{name}", daemon=True)
+                t.start()
+                t.join(self.timeout_s)
+                if t.is_alive():
+                    self._hung(f"{label}: no reply in {self.timeout_s:.0f}s")
+                if "error" in box:
+                    raise box["error"]
+                return box.get("value")
+            finally:
+                self.lock.release()
         return call
+
+
+def dump_and_exit(reason: str, health: Callable[[str, bool, str], None] | None = None, code: int = 70) -> None:
+    """Write every thread's Python stack to stderr, record a fault, and exit non-zero so
+    launchd (KeepAlive on failure) restarts the run. Used for hangs only."""
+    import faulthandler
+    import os
+    print(f"HANG: {reason}; dumping thread stacks and exiting for a restart", file=sys.stderr, flush=True)
+    faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+    if health is not None:
+        try:
+            health("watchdog", False, f"{reason}; restarting the process")
+        except Exception:  # noqa: BLE001 - the ledger may be what hangs; the exit must still happen
+            pass
+    sys.stderr.flush()
+    os._exit(code)
 
 
 @dataclass
@@ -74,14 +122,17 @@ def _oanda(acc, guard, ctx: dict):
                                       http=_logged_http(oanda._http, acc.account_id))
 
 
-def _logged_http(http: Callable, account_id: str) -> Callable:
+def _logged_http(http: Callable, account_id: str, retry_delays: tuple[float, ...] = (2.0, 5.0, 10.0),
+                 sleep: Callable[[float], None] | None = None) -> Callable:
     """Log every non-2xx Oanda REST reply with its path, query and Oanda's own error text.
 
     The adapter (protected) raises VenueAuthError without Oanda's message, which left the
     hourly 401s on /transactions/sinceid (6-7 Oct) undiagnosable. The account ID is masked
     and the token never reaches this function's output."""
     import logging
+    import time
     log = logging.getLogger("tradex.oanda.http")
+    sleep = sleep or time.sleep
 
     def call(method: str, url: str, headers: dict, body: dict | None = None, **kw):
         status, payload = http(method, url, headers, body, **kw)
@@ -93,6 +144,9 @@ def _logged_http(http: Callable, account_id: str) -> Callable:
             # A long-running run gets 401s that fresh processes never see (7 Oct). Compare the
             # token this process sent with the Keychain's (8-hex fingerprints only), then retry
             # the read once with the Keychain token: it either heals the call or names the cause.
+            # 7 Oct: same token as the Keychain (fingerprints matched), same account, and the very
+            # same request returned 200 minutes later. Oanda practice refuses some reads around
+            # an hourly close, so a 401 read is retried with backoff before the adapter faults.
             from tradex import secrets
             try:
                 fresh = secrets.get("oanda_token")
@@ -101,9 +155,13 @@ def _logged_http(http: Callable, account_id: str) -> Callable:
                 return status, payload
             sent = headers.get("Authorization", "").removeprefix("Bearer ")
             retry_headers = {**headers, "Authorization": f"Bearer {fresh}"}
-            status, payload = http(method, url, retry_headers, body, **kw)
-            log.warning("oanda 401 retry: sent token %s, keychain token %s -> %s %s", _fp(sent), _fp(fresh),
-                        status, payload.get("errorMessage", "") if status >= 300 else "ok")
+            for delay in retry_delays:
+                sleep(delay)
+                status, payload = http(method, url, retry_headers, body, **kw)
+                log.warning("oanda 401 retry after %ss: sent token %s, keychain token %s -> %s %s", delay, _fp(sent),
+                            _fp(fresh), status, payload.get("errorMessage", "") if status >= 300 else "ok")
+                if status != 401:
+                    break
         return status, payload
     return call
 
@@ -168,7 +226,7 @@ def paper_venues(classes, ledger, to_usd: Callable[[str], float], *, accounts_pa
             if not (isinstance(ad, VenueAdapter) and ad.guard is guard):
                 ad = GuardedBroker(ad, guard, acc.account_id)
             if hasattr(ad, "check_stops"):            # shared with the stop guardian's thread
-                ad = Serialized(ad)
+                ad = Serialized(ad, on_hang=ctx.get("on_hang"))
             venues[ac], names[ac] = ad, acc.name
     except BaseException:
         PaperVenues({}, {}, None, ctx["closers"]).close()
@@ -195,6 +253,7 @@ class PaperDeps:
     quiet_marks: Callable[[pd.Timestamp], bool] | None = None
     guardian_factory: Callable | None = None
     financing: Callable[[list[str]], dict] | None = None   # Oanda financing rates, to cross-check official rates
+    on_hang: Callable[[str, Any], None] | None = None      # tests replace the dump-and-exit on a hang
 
 
 def default_deps() -> PaperDeps:
@@ -232,11 +291,18 @@ def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None
     quotes = QuoteBook(cfg.quote_max_age_s, clock=clock.now)
     rates = LiveQuoteRates(quotes)
     ledger = Ledger(ledger_path, run_id=f"paper-{clock.now():%Y%m%dT%H%M%S}")
+    hang_health: list = []                        # the core's health hook, once the core exists
+
+    def on_hang(why: str) -> None:
+        (deps.on_hang or dump_and_exit)(why, hang_health[0] if hang_health else None)
     pv = None
     marks = None
     try:
         pv = deps.venues(classes, ledger, lambda ccy: rates.usd_per_unit(ccy, clock.now()),
                          accounts_path=accounts_path, state_dir=state_dir)
+        for v in pv.venues.values():
+            if isinstance(v, Serialized) and v.on_hang is None:
+                v.on_hang = on_hang
         ccys = {v.account().currency for v in pv.venues.values()}          # read-only
         fx = sorted({u for s in specs if s.asset_class == "forex" for u in s.universe if not u.startswith("$")})
         stream = deps.stream(stream_instruments(fx, ccys))
@@ -264,8 +330,17 @@ def run_paper(specs, ledger_path: str | Path, cfg, deps: PaperDeps | None = None
         print("not starting: fix the FAIL lines above", file=err)
         _close(pv, marks)
         return 1
+    hang_health.append(rt.core.health)
+    rt.on_stuck = on_hang
+    rt.watchdog_s = cfg.watchdog_s
     def _stop(*_):
         rt.stop_event.set()
+    if _main_thread():                            # `kill -USR1 <pid>` writes every thread's stack to stderr
+        import faulthandler
+        try:
+            faulthandler.register(signal.SIGUSR1, all_threads=True)
+        except (ValueError, OSError, AttributeError):  # stderr without a file descriptor (tests): no dump
+            pass
     old = {s: signal.signal(s, _stop) for s in (signal.SIGTERM, signal.SIGINT)} if _main_thread() else {}
     try:
         rt.start()

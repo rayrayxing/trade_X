@@ -18,6 +18,7 @@ class RuntimeConfig:
     quote_max_age_s: float = 30.0
     grace_s: float = 5.0
     overrun_s: float = 60.0
+    watchdog_s: float = 600.0          # a close still running after this is a hang: dump stacks, exit, restart
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "RuntimeConfig":
@@ -29,7 +30,8 @@ class RuntimeConfig:
         out = cls(agents_mode=str(a.get("mode", d.agents_mode)),
                   stale_after_s=float(f.get("stale_after_s", d.stale_after_s)),
                   quote_max_age_s=float(f.get("quote_max_age_s", d.quote_max_age_s)),
-                  grace_s=float(s.get("grace_s", d.grace_s)), overrun_s=float(s.get("overrun_s", d.overrun_s)))
+                  grace_s=float(s.get("grace_s", d.grace_s)), overrun_s=float(s.get("overrun_s", d.overrun_s)),
+                  watchdog_s=float(s.get("watchdog_s", d.watchdog_s)))
         if out.agents_mode not in AGENT_MODES:
             raise ValueError(f"{p}: agents.mode must be one of {AGENT_MODES}, not {out.agents_mode!r}")
         return out

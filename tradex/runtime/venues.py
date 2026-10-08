@@ -8,8 +8,16 @@ rate source at the current time; a missing rate raises (paper/live never guess).
 Venues that book financing (``financing(since)``: Oanda's daily financing) are read
 through ``financing_records``, which turns their entries into ledger ``Financing`` rows
 labelled with the venue, the agent account's name and the account currency.
+
+Venue reads (positions, fills) are cached for ``read_ttl_s`` seconds. The core asks once per
+symbol at every close, and moomoo's OpenD allows only 10 position queries per 30 s: on
+7 Oct a 12-strategy close tripped that limit on every forex symbol. Placing, cancelling or
+amending clears the cache, so a read after an order always goes back to the venue. Simulated
+venues are never cached: they fill inside ``on_bar``, between reads in the same second.
 """
 from __future__ import annotations
+
+import time
 
 import pandas as pd
 
@@ -20,8 +28,11 @@ from tradex.runtime.fx import RateSource
 
 class MultiVenueBook:
     def __init__(self, venues: dict[str, Broker], rates: RateSource, clock: Clock,
-                 accounts: dict[str, str] | None = None):
+                 accounts: dict[str, str] | None = None, read_ttl_s: float = 10.0,
+                 monotonic=time.monotonic):
         self.venues = venues                                  # asset class -> venue broker
+        self.read_ttl_s, self._now = read_ttl_s, monotonic
+        self._reads: dict[tuple, tuple[float, list]] = {}
         self.rates, self.clock = rates, clock
         self.accounts = dict(accounts or {})                  # asset class -> agent account name (no IDs)
         self._ccy: dict[str, str] = {}
@@ -46,26 +57,41 @@ class MultiVenueBook:
         except KeyError:
             raise KeyError(f"no venue for {asset_class}") from None
 
+    def _cached(self, key: tuple, read, venue):
+        if getattr(venue, "simulated", False):           # simulated venues fill inside on_bar: always fresh
+            return read()
+        hit = self._reads.get(key)
+        if hit is not None and self._now() - hit[0] < self.read_ttl_s:
+            return hit[1]
+        val = read()
+        self._reads[key] = (self._now(), val)
+        return val
+
     def place(self, req: OrderRequest) -> str:
+        self._reads.clear()
         coid = self.venue_for(req.asset_class).place(req)
         self._by_order[req.client_order_id] = req.asset_class
         self._by_decision.setdefault(req.decision_id, req.asset_class)
         return coid
 
     def cancel(self, client_order_id: str) -> bool:
+        self._reads.clear()
         ac = self._by_order.get(client_order_id)
         return self.venues[ac].cancel(client_order_id) if ac else False
 
     def amend_stop(self, decision_id: str, stop: float) -> None:
+        self._reads.clear()
         ac = self._by_decision.get(decision_id)
         if ac is not None:
             self.venues[ac].amend_stop(decision_id, stop)
 
     def positions(self, account: str | None = "agent") -> list[BrokerPosition]:
-        return [p for v in self.venues.values() for p in v.positions(account)]
+        return [p for ac, v in self.venues.items()
+                for p in self._cached(("positions", ac, account), lambda v=v: v.positions(account), v)]
 
     def fills(self, since: pd.Timestamp | None = None) -> list[BrokerFill]:
-        out = [f for v in self.venues.values() for f in v.fills(since)]
+        out = [f for ac, v in self.venues.items() for f in self._cached(("fills", ac), lambda v=v: v.fills(None), v)
+               if since is None or f.time >= since]
         return sorted(out, key=lambda f: f.time)
 
     def financing_records(self, since: pd.Timestamp | None = None) -> list[Financing]:

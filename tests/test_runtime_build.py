@@ -123,6 +123,8 @@ def test_stream_ticks_become_bars_the_core_runs_on():
     assert rt.store.frames["EUR_USD"].index[-1] == START and bar["open"] == pytest.approx(1.1)
     assert bar["close"] == pytest.approx(1.1055)
     assert not [h for h in rt.core.ledger.rows(kind="health") if not h["ok"]]
+    # a (re)started paper core shows its accounts at its first close, not at the next NY midnight
+    assert "ensemble" in {r["book"] for r in rt.core.ledger.rows(kind="snapshot")}
 
 
 def test_silent_stream_while_forex_trades_is_one_fault_then_recovery():
@@ -219,7 +221,7 @@ def test_oanda_http_errors_are_logged_without_the_account_id(caplog):
         calls["url"] = url
         return 401, {"errorMessage": "Insufficient authorization to perform request."}
 
-    wrapped = _logged_http(http, "101-000-SECRET")
+    wrapped = _logged_http(http, "101-000-SECRET", sleep=lambda s: None)
     with caplog.at_level("WARNING"):
         st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/101-000-SECRET/transactions/sinceid?id=3",
                         {"Authorization": "Bearer zq9-tok-zq9"})
@@ -305,10 +307,69 @@ def test_oanda_401_get_is_retried_once_with_the_keychain_token(caplog, monkeypat
         sent.append(headers["Authorization"])
         return (200, {}) if headers["Authorization"] == "Bearer fresh-token" else (401, {"errorMessage": "nope"})
 
-    wrapped = _logged_http(http, "ACC")
+    wrapped = _logged_http(http, "ACC", sleep=lambda s: None)
     with caplog.at_level("WARNING"):
         st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/ACC/openTrades", {"Authorization": "Bearer old"})
     assert st == 200 and sent == ["Bearer old", "Bearer fresh-token"]
     assert "fresh-token" not in caplog.text and "Bearer old" not in caplog.text and "401 retry" in caplog.text
     st, _ = wrapped("POST", "https://api-fxpractice.oanda.com/v3/accounts/ACC/orders", {"Authorization": "Bearer old"})
     assert st == 401 and len(sent) == 3                     # orders are never retried here
+
+
+def test_oanda_401_read_backs_off_until_oanda_answers(monkeypatch):
+    import tradex.secrets
+    from tradex.runtime.paper import _logged_http
+    monkeypatch.setattr(tradex.secrets, "get", lambda name: "tok")
+    replies, slept = [401, 401, 200], []
+
+    def http(method, url, headers, body=None, **kw):
+        return replies.pop(0), {}
+
+    wrapped = _logged_http(http, "ACC", sleep=slept.append)
+    st, _ = wrapped("GET", "https://api-fxpractice.oanda.com/v3/accounts/ACC/openTrades", {"Authorization": "Bearer tok"})
+    assert st == 200 and slept == [2.0, 5.0]
+
+
+def test_venue_reads_are_cached_within_a_close_and_cleared_by_orders():
+    from tradex.runtime.venues import MultiVenueBook
+    calls = {"positions": 0, "fills": 0}
+
+    class Venue:
+        def positions(self, account="agent"):
+            calls["positions"] += 1
+            return []
+
+        def fills(self, since=None):
+            calls["fills"] += 1
+            return []
+
+        def cancel(self, coid):
+            return True
+
+    now = [0.0]
+    book = MultiVenueBook({"stocks": Venue()}, rates=None, clock=None, monotonic=lambda: now[0])
+    for _ in range(9):                                   # the core asks once per symbol at a close
+        book.positions()
+        book.fills(pd.Timestamp("2026-10-07", tz="UTC"))
+    assert calls == {"positions": 1, "fills": 1}
+    book._by_order["x"] = "stocks"
+    book.cancel("x")                                     # an order action always re-reads the venue
+    book.positions()
+    now[0] = 11.0
+    book.fills()
+    assert calls == {"positions": 2, "fills": 2}
+
+
+def test_a_holding_of_rays_without_a_live_price_does_not_block_the_snapshot():
+    """8 Oct: an option Ray holds in the SIMULATE account had no mark, and the whole ensemble
+    snapshot failed with 'no mark for NET261023C350000'."""
+    from tradex.core.interfaces import BrokerPosition
+    clock = ReplayClock(START)
+    venue = SimBroker(10_000, account_id="sim")
+    venue.add_external_position(BrokerPosition("moomoo-NET261023C350000", "NET261023C350000", "stocks", 1, 1.0,
+                                               12.5, START, None, None))
+    rt, _, _ = _build(clock=clock, venues={"forex": venue})
+    rt.core._snapshot_all(START)
+    snaps = [r for r in rt.core.ledger.rows(kind="snapshot") if r["book"] == "ensemble"]
+    assert snaps and [p["mark"] for p in snaps[-1]["positions"] if p["account"] == "ray"] == [None]
+    assert not [h for h in rt.core.ledger.rows(kind="health") if h["check"] == "snapshot"]

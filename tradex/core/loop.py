@@ -576,7 +576,20 @@ class TradingCore:
 
     def _legs(self, br: Broker) -> list[Leg]:
         return [Leg(p.symbol, p.asset_class, p.direction, p.qty, self._mark(p.symbol, p.entry_price), p.stop,
-                    p.account) for p in br.positions(account=None)]
+                    p.account) for p in br.positions(account=None) if self._ray_mark(p) is not _UNMARKED]
+
+    def _ray_mark(self, p) -> float | None | object:
+        """The mark of a position, or ``_UNMARKED`` for one of Ray's own holdings that has no live
+        price here (8 Oct: an option he holds in the SIMULATE account). The agent never trades
+        Ray's holdings and the venue's equity already counts them, so such a holding is listed
+        without a mark and left out of the exposure legs instead of failing the whole snapshot.
+        The agent's own positions still need a real mark (paper/live raise MissingData)."""
+        if p.account != "ray":
+            return self._mark(p.symbol)
+        try:
+            return self._mark(p.symbol)
+        except MissingData:
+            return _UNMARKED
 
     def _open_risk_usd(self, br: Broker, ts: pd.Timestamp) -> float:
         out = 0.0
@@ -681,6 +694,8 @@ class TradingCore:
         day = close_t.tz_convert(NY).date()
         if self._last_snap_day is None:
             self._last_snap_day = day
+            if self.cfg.live:                     # a paper/live (re)start shows the account now, not at next midnight
+                self._snapshot_all(close_t)
         elif day != self._last_snap_day:
             self._snapshot_all(close_t)
             self._last_snap_day = day
@@ -708,7 +723,7 @@ class TradingCore:
                 open_risk_usd=round(risk, 2),
                 positions=[{"decision_id": p.decision_id, "symbol": p.symbol, "direction": p.direction, "qty": p.qty,
                             "entry": p.entry_price, "stop": p.stop, "target": p.take_profit, "account": p.account,
-                            "mark": self._mark(p.symbol)} for p in br.positions(account=None)],
+                            "mark": _mark_or_none(self._ray_mark(p))} for p in br.positions(account=None)],
                 exposure_by_currency={k: round(v, 2) for k, v in net_open_position(legs, fx).items()},
                 limits={"heat_cap_usd": round(eq * bk["heat_cap_pct"] / 100, 2), "tier": self.tier,
                         "paused": self.paused},
@@ -721,6 +736,13 @@ class TradingCore:
             out[book] = {"equity": round(br.account().equity, 2), "closed_trades": int(n),
                          "net_pnl": round(net, 2), "open_positions": len(br.positions())}
         return out
+
+
+_UNMARKED = object()
+
+
+def _mark_or_none(m):
+    return None if m is _UNMARKED else m
 
 
 def _currencies(items) -> set[str]:
